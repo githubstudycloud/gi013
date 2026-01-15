@@ -3,7 +3,7 @@
 ## 测试概述
 
 - **测试日期**: 2026-01-15
-- **版本**: 1.1.0
+- **版本**: 1.2.0
 - **测试环境**: Windows 10, JDK 8+
 - **测试框架**: JUnit 4.13.2
 - **Maven版本**: 3.9.11
@@ -19,7 +19,7 @@
 | 失败数 | 0 |
 | 错误数 | 0 |
 | 跳过数 | 0 |
-| 执行时间 | 0.052s |
+| 执行时间 | 0.053s |
 | **构建状态** | ✅ **SUCCESS** |
 
 ---
@@ -168,7 +168,7 @@
 [INFO]  T E S T S
 [INFO] -------------------------------------------------------
 [INFO] Running com.glm.utils.JsonValueExtractorTest
-[INFO] Tests run: 45, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.052 s
+[INFO] Tests run: 45, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.053 s
 [INFO] 
 [INFO] Results:
 [INFO] 
@@ -177,8 +177,8 @@
 [INFO] ------------------------------------------------------------------------
 [INFO] BUILD SUCCESS
 [INFO] ------------------------------------------------------------------------
-[INFO] Total time:  1.708 s
-[INFO] Finished at: 2026-01-15T14:24:44+08:00
+[INFO] Total time:  1.843 s
+[INFO] Finished at: 2026-01-15T14:40:53+08:00
 [INFO] ------------------------------------------------------------------------
 ```
 
