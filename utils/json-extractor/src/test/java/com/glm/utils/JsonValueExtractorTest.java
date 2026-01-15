@@ -19,7 +19,7 @@ import static org.junit.Assert.*;
  * - 去重并保留顺序
  * 
  * @author GLM
- * @version 1.4.0
+ * @version 1.4.1
  */
 public class JsonValueExtractorTest {
 
@@ -413,6 +413,53 @@ public class JsonValueExtractorTest {
         
         assertEquals(1, result.size());
         assertTrue(result.contains("str"));
+    }
+
+    // ==================================================================================
+    // 【新增】字符串JSON字段便捷方法测试
+    // ==================================================================================
+
+    @Test
+    public void testExtractFirstStringFromStringField() {
+        // 字符串JSON取第一个字符串值
+        String json = "{\"sa\":\"{\\\"a\\\":{\\\"items\\\":[{\\\"aenv\\\":\\\"first\\\"},{\\\"aenv\\\":\\\"second\\\"}]}}\"}";
+        Set<String> result = JsonValueExtractor.extractFirstStringFromStringField(json, "sa", "a", "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("first"));
+    }
+
+    @Test
+    public void testExtractFirstFromStringFieldWithPathChain() {
+        // 字符串JSON + 路径链 + 取第一个
+        String json = "{\"sa\":\"{\\\"a\\\":{\\\"a1\\\":{\\\"items\\\":[{\\\"aenv\\\":\\\"first\\\"},{\\\"aenv\\\":\\\"second\\\"}]}}}\"}";
+        Set<Object> result = JsonValueExtractor.extractFirstFromStringFieldWithPathChain(
+            json, "sa", Arrays.asList("a", "a1"), "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("first"));
+    }
+
+    @Test
+    public void testExtractStringFromStringFieldWithPathChain() {
+        // 字符串JSON + 路径链 + 只取字符串
+        String json = "{\"sa\":\"{\\\"a\\\":{\\\"a1\\\":{\\\"aenv\\\":\\\"strVal\\\",\\\"child\\\":{\\\"aenv\\\":123}}}}\"}";
+        Set<String> result = JsonValueExtractor.extractStringFromStringFieldWithPathChain(
+            json, "sa", Arrays.asList("a", "a1"), "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("strVal"));
+    }
+
+    @Test
+    public void testExtractFirstStringFromStringFieldWithPathChain() {
+        // 字符串JSON + 路径链 + 只取字符串 + 取第一个
+        String json = "{\"sa\":\"{\\\"a\\\":{\\\"a1\\\":{\\\"items\\\":[{\\\"aenv\\\":\\\"first\\\"},{\\\"aenv\\\":\\\"second\\\"}]}}}\"}";
+        Set<String> result = JsonValueExtractor.extractFirstStringFromStringFieldWithPathChain(
+            json, "sa", Arrays.asList("a", "a1"), "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("first"));
     }
 
     // ==================================================================================

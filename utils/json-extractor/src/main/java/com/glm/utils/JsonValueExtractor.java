@@ -39,7 +39,7 @@ import java.util.*;
  * }</pre>
  * 
  * @author GLM
- * @version 1.4.0
+ * @version 1.4.1
  * @since JDK 1.8
  */
 public class JsonValueExtractor {
@@ -350,19 +350,102 @@ public class JsonValueExtractor {
         return results;
     }
 
+    /**
+     * 【便捷方法】从字符串类型的JSON字段中使用路径链提取值，只取每个数组的第一个元素
+     * 
+     * <p>等同于 extractFromStringFieldWithPathChainAndArrayIndex(json, stringFieldKey, pathChain, targetKey, 0)</p>
+     *
+     * @param jsonString     JSON字符串
+     * @param stringFieldKey 字符串类型JSON字段的键名
+     * @param pathChain      路径链
+     * @param targetKey      目标键
+     * @return 去重后的值集合，只包含数组第一个元素
+     */
+    public static Set<Object> extractFirstFromStringFieldWithPathChain(String jsonString, String stringFieldKey, 
+                                                                        List<String> pathChain, String targetKey) {
+        return extractFromStringFieldWithPathChainAndArrayIndex(jsonString, stringFieldKey, pathChain, targetKey, 0);
+    }
+
+    /**
+     * 【便捷方法】从字符串类型的JSON字段中提取字符串值，只取每个数组的第一个元素
+     * 
+     * <p>结合了字符串JSON解析、字符串类型过滤和数组第一个元素提取。</p>
+     *
+     * @param jsonString     JSON字符串
+     * @param stringFieldKey 字符串类型JSON字段的键名
+     * @param pathKey        路径键
+     * @param targetKey      目标键
+     * @return 字符串值集合，只包含数组第一个元素
+     */
+    public static Set<String> extractFirstStringFromStringField(String jsonString, String stringFieldKey, 
+                                                                 String pathKey, String targetKey) {
+        Set<Object> values = extractFirstFromStringField(jsonString, stringFieldKey, pathKey, targetKey);
+        return filterStrings(values);
+    }
+
+    /**
+     * 【便捷方法】从字符串类型的JSON字段中使用路径链提取字符串值
+     * 
+     * <p>结合了字符串JSON解析、路径链和字符串类型过滤。</p>
+     *
+     * @param jsonString     JSON字符串
+     * @param stringFieldKey 字符串类型JSON字段的键名
+     * @param pathChain      路径链
+     * @param targetKey      目标键
+     * @return 字符串值集合
+     */
+    public static Set<String> extractStringFromStringFieldWithPathChain(String jsonString, String stringFieldKey, 
+                                                                         List<String> pathChain, String targetKey) {
+        Set<Object> values = extractFromStringFieldWithPathChain(jsonString, stringFieldKey, pathChain, targetKey);
+        return filterStrings(values);
+    }
+
+    /**
+     * 【便捷方法】从字符串类型的JSON字段中使用路径链提取字符串值，只取每个数组的第一个元素
+     * 
+     * <p>结合了字符串JSON解析、路径链、字符串类型过滤和数组第一个元素提取。</p>
+     *
+     * @param jsonString     JSON字符串
+     * @param stringFieldKey 字符串类型JSON字段的键名
+     * @param pathChain      路径链
+     * @param targetKey      目标键
+     * @return 字符串值集合，只包含数组第一个元素
+     */
+    public static Set<String> extractFirstStringFromStringFieldWithPathChain(String jsonString, String stringFieldKey, 
+                                                                              List<String> pathChain, String targetKey) {
+        Set<Object> values = extractFirstFromStringFieldWithPathChain(jsonString, stringFieldKey, pathChain, targetKey);
+        return filterStrings(values);
+    }
+
     // ==================================================================================
     // 第四部分：兼容方法（保留向后兼容）
+    // 这些方法是为了保持与早期版本的API兼容性而保留的
     // ==================================================================================
 
     /**
-     * 从JSON中提取指定路径下目标键的所有值（兼容方法）
+     * 从JSON中提取指定路径下目标键的所有值
+     * 
+     * <p><b>兼容方法：</b>此方法与 {@link #extractAllValues} 功能相同，保留是为了向后兼容。</p>
+     *
+     * @param jsonString JSON字符串
+     * @param pathKey    路径键名
+     * @param targetKey  目标键名
+     * @return 去重后的值集合
+     * @see #extractAllValues(String, String, String)
      */
     public static Set<Object> extractValuesUnderPath(String jsonString, String pathKey, String targetKey) {
         return extractAllValues(jsonString, pathKey, targetKey);
     }
 
     /**
-     * 从JsonObject中提取值
+     * 从JsonObject中提取指定路径下目标键的所有值
+     * 
+     * <p>适用于已经解析好的JsonObject对象，避免重复解析JSON字符串。</p>
+     *
+     * @param jsonObject JSON对象，可以为null（返回空集合）
+     * @param pathKey    路径键名
+     * @param targetKey  目标键名
+     * @return 去重后的值集合
      */
     public static Set<Object> extractValuesUnderPath(JsonObject jsonObject, String pathKey, String targetKey) {
         if (jsonObject == null) {
@@ -373,7 +456,16 @@ public class JsonValueExtractor {
     }
 
     /**
-     * 从JSON中提取值，支持数组索引
+     * 从JSON中提取值，支持指定数组索引
+     * 
+     * <p><b>兼容方法：</b>与 {@link #extractAllValuesWithArrayIndex} 功能相同。</p>
+     *
+     * @param jsonString JSON字符串
+     * @param pathKey    路径键名
+     * @param targetKey  目标键名
+     * @param arrayIndex 数组索引（0-based），-1表示遍历所有元素
+     * @return 去重后的值集合
+     * @see #extractAllValuesWithArrayIndex(String, String, String, int)
      */
     public static Set<Object> extractValuesWithArrayIndex(String jsonString, String pathKey, 
                                                            String targetKey, int arrayIndex) {
@@ -381,7 +473,13 @@ public class JsonValueExtractor {
     }
 
     /**
-     * 从JsonObject中提取值，支持数组索引
+     * 从JsonObject中提取值，支持指定数组索引
+     *
+     * @param jsonObject JSON对象，可以为null（返回空集合）
+     * @param pathKey    路径键名
+     * @param targetKey  目标键名
+     * @param arrayIndex 数组索引（0-based），-1表示遍历所有元素
+     * @return 去重后的值集合
      */
     public static Set<Object> extractValuesWithArrayIndex(JsonObject jsonObject, String pathKey, 
                                                            String targetKey, int arrayIndex) {
@@ -394,6 +492,14 @@ public class JsonValueExtractor {
 
     /**
      * 便捷方法：只取每个数组的第一个元素
+     * 
+     * <p><b>兼容方法：</b>与 {@link #extractAllFirstValues} 功能相同。</p>
+     *
+     * @param jsonString JSON字符串
+     * @param pathKey    路径键名
+     * @param targetKey  目标键名
+     * @return 去重后的值集合，只包含每个数组的第一个元素
+     * @see #extractAllFirstValues(String, String, String)
      */
     public static Set<Object> extractFirstValuesFromArrays(String jsonString, String pathKey, String targetKey) {
         return extractAllFirstValues(jsonString, pathKey, targetKey);
@@ -401,17 +507,42 @@ public class JsonValueExtractor {
 
     // ==================================================================================
     // 第五部分：批量提取方法
+    // 支持一次调用提取多组路径-键值对，提高效率
     // ==================================================================================
 
     /**
      * 批量提取多组 pathKey -> targetKey 的值
+     * 
+     * <h4>示例：</h4>
+     * <pre>{@code
+     * List<String[]> mappings = Arrays.asList(
+     *     new String[]{"database", "host"},
+     *     new String[]{"cache", "host"}
+     * );
+     * Map<String, Set<Object>> result = JsonValueExtractor.batchExtract(json, mappings);
+     * // result.get("host") 包含所有提取的host值
+     * }</pre>
+     * 
+     * <p><b>注意：</b>返回的Map以targetKey为键，如果多个映射使用相同的targetKey，
+     * 后面的结果会覆盖前面的结果。</p>
+     *
+     * @param jsonString JSON字符串
+     * @param mappings   映射列表，每个元素为 [pathKey, targetKey] 数组
+     * @return Map，key为targetKey，value为提取到的值集合
+     * @throws IllegalArgumentException 如果参数无效
      */
     public static Map<String, Set<Object>> batchExtract(String jsonString, List<String[]> mappings) {
         return batchExtractWithArrayIndex(jsonString, mappings, ARRAY_INDEX_ALL);
     }
 
     /**
-     * 批量提取，支持数组索引
+     * 批量提取多组键值对，支持指定数组索引
+     *
+     * @param jsonString JSON字符串
+     * @param mappings   映射列表，每个元素为 [pathKey, targetKey] 数组
+     * @param arrayIndex 数组索引（0-based），-1表示遍历所有元素
+     * @return Map，key为targetKey，value为提取到的值集合
+     * @throws IllegalArgumentException 如果参数无效
      */
     public static Map<String, Set<Object>> batchExtractWithArrayIndex(String jsonString, 
                                                                        List<String[]> mappings, 
@@ -432,7 +563,13 @@ public class JsonValueExtractor {
     }
 
     /**
-     * 批量提取并返回List形式
+     * 批量提取并返回List形式的结果
+     * 
+     * <p>与 {@link #batchExtract} 的区别在于返回值类型是 List 而不是 Set，方便某些场景使用。</p>
+     *
+     * @param jsonString JSON字符串
+     * @param mappings   映射列表
+     * @return Map，key为targetKey，value为提取到的值列表
      */
     public static Map<String, List<Object>> batchExtractAsList(String jsonString, List<String[]> mappings) {
         Map<String, Set<Object>> setResult = batchExtract(jsonString, mappings);
@@ -445,10 +582,18 @@ public class JsonValueExtractor {
 
     // ==================================================================================
     // 第六部分：字符串专用方法
+    // 这些方法只提取字符串类型的值，自动过滤掉数字、布尔等其他类型
     // ==================================================================================
 
     /**
-     * 提取所有字符串类型的值
+     * 提取指定路径下目标键的所有字符串类型值
+     * 
+     * <p>只返回字符串类型的值，自动过滤数字、布尔值等其他类型。</p>
+     *
+     * @param jsonString JSON字符串
+     * @param pathKey    路径键名
+     * @param targetKey  目标键名
+     * @return 去重后的字符串值集合
      */
     public static Set<String> extractStringValues(String jsonString, String pathKey, String targetKey) {
         Set<Object> values = extractAllValues(jsonString, pathKey, targetKey);
@@ -456,14 +601,24 @@ public class JsonValueExtractor {
     }
 
     /**
-     * 提取字符串值并返回List
+     * 提取字符串值并返回List形式
+     *
+     * @param jsonString JSON字符串
+     * @param pathKey    路径键名
+     * @param targetKey  目标键名
+     * @return 去重后的字符串值列表
      */
     public static List<String> extractStringValuesAsList(String jsonString, String pathKey, String targetKey) {
         return new ArrayList<>(extractStringValues(jsonString, pathKey, targetKey));
     }
 
     /**
-     * 提取字符串值，只取每个数组的第一个
+     * 提取字符串值，只取每个数组的第一个元素
+     *
+     * @param jsonString JSON字符串
+     * @param pathKey    路径键名
+     * @param targetKey  目标键名
+     * @return 去重后的字符串值集合，只包含每个数组的第一个元素
      */
     public static Set<String> extractFirstStringValues(String jsonString, String pathKey, String targetKey) {
         Set<Object> values = extractAllFirstValues(jsonString, pathKey, targetKey);

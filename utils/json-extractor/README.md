@@ -121,6 +121,7 @@ Set<Object> result = JsonValueExtractor.extractFromStringField(json, "sa", "a", 
 - `extractFromStringFieldWithArrayIndex(...)` - 支持数组索引
 - `extractFirstFromStringField(...)` - 只取第一个元素
 - `extractStringFromStringField(...)` - 只提取字符串值
+- `extractFirstStringFromStringField(...)` - 只取第一个字符串值
 
 ---
 
@@ -247,11 +248,18 @@ mvn clean package
 
 ## 版本历史
 
+### v1.4.1 (2026-01-15)
+- ✨ **新增**：`extractFirstFromStringFieldWithPathChain` - 字符串JSON+路径链+取第一个
+- ✨ **新增**：`extractFirstStringFromStringField` - 字符串JSON+取第一个字符串值
+- ✨ **新增**：`extractStringFromStringFieldWithPathChain` - 字符串JSON+路径链+只取字符串
+- ✨ **新增**：`extractFirstStringFromStringFieldWithPathChain` - 全功能组合
+- 📝 增强所有方法的注释文档
+- 📝 增加到 80 个测试用例
+
 ### v1.4.0 (2026-01-15)
 - ✨ **新增**：路径链支持 - `extractWithPathChain` 系列方法
 - ✨ **新增**：字符串JSON字段解析 - `extractFromStringField` 系列方法
 - ✨ **新增**：字符串JSON + 路径链组合 - `extractFromStringFieldWithPathChain`
-- 📝 增加到 76 个测试用例
 
 ### v1.3.0 (2026-01-15)
 - 🐛 修复 pathKey 任意深度搜索
@@ -271,7 +279,7 @@ mvn clean package
 
 ## 版本信息
 
-- **版本:** 1.4.0
+- **版本:** 1.4.1
 - **作者:** GLM
 - **JDK:** 1.8+
 - **License:** MIT
