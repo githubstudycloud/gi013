@@ -13,11 +13,13 @@ import static org.junit.Assert.*;
  * - pathKey 在任意深度位置
  * - targetKey 在 pathKey 下的任意深度（子、孙、曾孙等）
  * - 嵌套同名路径（a套a）只取最内层
+ * - 路径链支持（a -> a1 -> aenv）
+ * - 字符串JSON字段解析
  * - 数组索引控制
  * - 去重并保留顺序
  * 
  * @author GLM
- * @version 1.3.0
+ * @version 1.4.0
  */
 public class JsonValueExtractorTest {
 
@@ -27,7 +29,6 @@ public class JsonValueExtractorTest {
 
     @Test
     public void testPathKeyAtRoot() {
-        // pathKey 在根级别
         String json = "{\"a\":{\"aenv\":\"value1\"}}";
         Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
         
@@ -37,7 +38,6 @@ public class JsonValueExtractorTest {
 
     @Test
     public void testPathKeyAtDeepLevel() {
-        // pathKey 在深层
         String json = "{\"root\":{\"config\":{\"a\":{\"aenv\":\"deepValue\"}}}}";
         Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
         
@@ -47,7 +47,6 @@ public class JsonValueExtractorTest {
 
     @Test
     public void testPathKeyAtVeryDeepLevel() {
-        // pathKey 在非常深的层级
         String json = "{\"l1\":{\"l2\":{\"l3\":{\"l4\":{\"l5\":{\"a\":{\"aenv\":\"veryDeep\"}}}}}}}";
         Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
         
@@ -57,7 +56,6 @@ public class JsonValueExtractorTest {
 
     @Test
     public void testMultiplePathKeysAtDifferentLevels() {
-        // 多个 pathKey 在不同层级
         String json = "{\"a\":{\"aenv\":\"root-a\"},\"nested\":{\"a\":{\"aenv\":\"nested-a\"}}}";
         Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
         
@@ -68,7 +66,6 @@ public class JsonValueExtractorTest {
 
     @Test
     public void testPathKeyInArray() {
-        // pathKey 在数组中的对象里
         String json = "{\"items\":[{\"a\":{\"aenv\":\"arr-value\"}}]}";
         Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
         
@@ -77,12 +74,11 @@ public class JsonValueExtractorTest {
     }
 
     // ==================================================================================
-    // 核心功能测试：targetKey 在任意深度（子、孙、曾孙等）
+    // 核心功能测试：targetKey 在任意深度
     // ==================================================================================
 
     @Test
     public void testTargetKeyAsDirectChild() {
-        // targetKey 是 pathKey 的直接子节点
         String json = "{\"a\":{\"aenv\":\"directChild\"}}";
         Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
         
@@ -92,7 +88,6 @@ public class JsonValueExtractorTest {
 
     @Test
     public void testTargetKeyAsGrandchild() {
-        // targetKey 是 pathKey 的孙子节点
         String json = "{\"a\":{\"level1\":{\"aenv\":\"grandchild\"}}}";
         Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
         
@@ -102,7 +97,6 @@ public class JsonValueExtractorTest {
 
     @Test
     public void testTargetKeyAsGreatGrandchild() {
-        // targetKey 是 pathKey 的曾孙子节点
         String json = "{\"a\":{\"level1\":{\"level2\":{\"aenv\":\"greatGrandchild\"}}}}";
         Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
         
@@ -112,7 +106,6 @@ public class JsonValueExtractorTest {
 
     @Test
     public void testTargetKeyAtVeryDeepLevel() {
-        // targetKey 在 pathKey 下非常深的层级
         String json = "{\"a\":{\"l1\":{\"l2\":{\"l3\":{\"l4\":{\"l5\":{\"aenv\":\"veryDeepTarget\"}}}}}}}";
         Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
         
@@ -122,7 +115,6 @@ public class JsonValueExtractorTest {
 
     @Test
     public void testTargetKeyAtMultipleLevels() {
-        // targetKey 在 pathKey 下的多个层级都存在
         String json = "{\"a\":{\"aenv\":\"level0\",\"child\":{\"aenv\":\"level1\",\"grandchild\":{\"aenv\":\"level2\"}}}}";
         Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
         
@@ -134,7 +126,6 @@ public class JsonValueExtractorTest {
 
     @Test
     public void testTargetKeyInArrayUnderPathKey() {
-        // targetKey 在 pathKey 下的数组中
         String json = "{\"a\":{\"items\":[{\"aenv\":\"arr1\"},{\"aenv\":\"arr2\"}]}}";
         Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
         
@@ -145,7 +136,6 @@ public class JsonValueExtractorTest {
 
     @Test
     public void testTargetKeyInDeepArrayUnderPathKey() {
-        // targetKey 在 pathKey 下深层数组中的对象的深层位置
         String json = "{\"a\":{\"level1\":{\"items\":[{\"deep\":{\"aenv\":\"deepInArray\"}}]}}}";
         Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
         
@@ -154,16 +144,14 @@ public class JsonValueExtractorTest {
     }
 
     // ==================================================================================
-    // 核心功能测试：嵌套同名路径（a套a）
+    // 嵌套同名路径（a套a）测试
     // ==================================================================================
 
     @Test
     public void testNestedSamePathKey_OnlyInnermost() {
-        // a 套 a，只取最内层的 aenv
         String json = "{\"a\":{\"aenv\":\"outer\",\"a\":{\"aenv\":\"inner\"}}}";
         Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
         
-        // 只应该有 inner，因为外层 a 包含内层 a
         assertEquals(1, result.size());
         assertTrue(result.contains("inner"));
         assertFalse(result.contains("outer"));
@@ -171,7 +159,6 @@ public class JsonValueExtractorTest {
 
     @Test
     public void testTripleNestedSamePathKey() {
-        // a 套 a 套 a，只取最内层
         String json = "{\"a\":{\"aenv\":\"level1\",\"a\":{\"aenv\":\"level2\",\"a\":{\"aenv\":\"level3\"}}}}";
         Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
         
@@ -181,7 +168,6 @@ public class JsonValueExtractorTest {
 
     @Test
     public void testNestedPathKeyWithDeepTargetKey() {
-        // a 套 a，内层 a 的 aenv 在深层
         String json = "{\"a\":{\"aenv\":\"outer\",\"a\":{\"deep\":{\"deeper\":{\"aenv\":\"innerDeep\"}}}}}";
         Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
         
@@ -191,7 +177,6 @@ public class JsonValueExtractorTest {
 
     @Test
     public void testNoNestedPathKey() {
-        // 没有嵌套同名路径，正常提取所有
         String json = "{\"a\":{\"aenv\":\"val1\",\"other\":{\"aenv\":\"val2\"}}}";
         Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
         
@@ -201,12 +186,303 @@ public class JsonValueExtractorTest {
     }
 
     // ==================================================================================
+    // 【新增】路径链测试
+    // ==================================================================================
+
+    @Test
+    public void testPathChain_Simple() {
+        // 简单路径链：a -> a1 -> aenv
+        String json = "{\"a\":{\"a1\":{\"aenv\":\"value\"}}}";
+        Set<Object> result = JsonValueExtractor.extractWithPathChain(json, Arrays.asList("a", "a1"), "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("value"));
+    }
+
+    @Test
+    public void testPathChain_IgnoreOtherBranches() {
+        // 路径链只取 a -> a1 下的 aenv，忽略 a 下直接的 aenv
+        String json = "{\"a\":{\"aenv\":\"ignored\",\"a1\":{\"aenv\":\"found\"}}}";
+        Set<Object> result = JsonValueExtractor.extractWithPathChain(json, Arrays.asList("a", "a1"), "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("found"));
+        assertFalse(result.contains("ignored"));
+    }
+
+    @Test
+    public void testPathChain_DeepPath() {
+        // 深层路径链：a -> b -> c -> target
+        String json = "{\"root\":{\"a\":{\"b\":{\"c\":{\"target\":\"deepValue\"}}}}}";
+        Set<Object> result = JsonValueExtractor.extractWithPathChain(json, Arrays.asList("a", "b", "c"), "target");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("deepValue"));
+    }
+
+    @Test
+    public void testPathChain_TargetInDeepSubtree() {
+        // 路径链指定后，在最终节点的深层子树中搜索 target
+        String json = "{\"a\":{\"a1\":{\"deep\":{\"deeper\":{\"aenv\":\"veryDeep\"}}}}}";
+        Set<Object> result = JsonValueExtractor.extractWithPathChain(json, Arrays.asList("a", "a1"), "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("veryDeep"));
+    }
+
+    @Test
+    public void testPathChain_MultiplePathsFound() {
+        // 多个位置都匹配路径链
+        String json = "{\"section1\":{\"a\":{\"a1\":{\"aenv\":\"v1\"}}},\"section2\":{\"a\":{\"a1\":{\"aenv\":\"v2\"}}}}";
+        Set<Object> result = JsonValueExtractor.extractWithPathChain(json, Arrays.asList("a", "a1"), "aenv");
+        
+        assertEquals(2, result.size());
+        assertTrue(result.contains("v1"));
+        assertTrue(result.contains("v2"));
+    }
+
+    @Test
+    public void testPathChain_WithArrayIndex() {
+        // 路径链配合数组索引
+        String json = "{\"a\":{\"a1\":{\"items\":[{\"aenv\":\"first\"},{\"aenv\":\"second\"}]}}}";
+        Set<Object> result = JsonValueExtractor.extractWithPathChainAndArrayIndex(json, Arrays.asList("a", "a1"), "aenv", 0);
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("first"));
+    }
+
+    @Test
+    public void testPathChain_PathNotFound() {
+        // 路径链中某个节点不存在
+        String json = "{\"a\":{\"other\":{\"aenv\":\"value\"}}}";
+        Set<Object> result = JsonValueExtractor.extractWithPathChain(json, Arrays.asList("a", "a1"), "aenv");
+        
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    public void testPathChain_SinglePath() {
+        // 单个路径（等同于普通提取）
+        String json = "{\"a\":{\"aenv\":\"value\"}}";
+        Set<Object> result = JsonValueExtractor.extractWithPathChain(json, Arrays.asList("a"), "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("value"));
+    }
+
+    @Test
+    public void testPathChain_InArray() {
+        // 路径链中的节点在数组中
+        String json = "{\"items\":[{\"a\":{\"a1\":{\"aenv\":\"arrValue\"}}}]}";
+        Set<Object> result = JsonValueExtractor.extractWithPathChain(json, Arrays.asList("a", "a1"), "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("arrValue"));
+    }
+
+    @Test
+    public void testExtractFirstWithPathChain() {
+        // 路径链取第一个元素
+        String json = "{\"a\":{\"a1\":{\"items\":[{\"aenv\":\"first\"},{\"aenv\":\"second\"}]}}}";
+        Set<Object> result = JsonValueExtractor.extractFirstWithPathChain(json, Arrays.asList("a", "a1"), "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("first"));
+    }
+
+    @Test
+    public void testExtractStringWithPathChain() {
+        // 路径链提取字符串值
+        String json = "{\"a\":{\"a1\":{\"aenv\":\"strValue\",\"child\":{\"aenv\":123}}}}";
+        Set<String> result = JsonValueExtractor.extractStringWithPathChain(json, Arrays.asList("a", "a1"), "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("strValue"));
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testPathChain_NullPathChain() {
+        JsonValueExtractor.extractWithPathChain("{}", null, "aenv");
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testPathChain_EmptyPathChain() {
+        JsonValueExtractor.extractWithPathChain("{}", Collections.emptyList(), "aenv");
+    }
+
+    // ==================================================================================
+    // 【新增】字符串JSON字段解析测试
+    // ==================================================================================
+
+    @Test
+    public void testStringField_Simple() {
+        // 简单的字符串JSON字段
+        String json = "{\"sa\":\"{\\\"a\\\":{\\\"aenv\\\":\\\"innerValue\\\"}}\"}";
+        Set<Object> result = JsonValueExtractor.extractFromStringField(json, "sa", "a", "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("innerValue"));
+    }
+
+    @Test
+    public void testStringField_DeepInner() {
+        // 字符串JSON中的目标在深层
+        String json = "{\"sa\":\"{\\\"a\\\":{\\\"deep\\\":{\\\"aenv\\\":\\\"deepInner\\\"}}}\"}";
+        Set<Object> result = JsonValueExtractor.extractFromStringField(json, "sa", "a", "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("deepInner"));
+    }
+
+    @Test
+    public void testStringField_MultipleFields() {
+        // 多个字符串JSON字段
+        String json = "{\"item1\":{\"sa\":\"{\\\"a\\\":{\\\"aenv\\\":\\\"v1\\\"}}\"}"
+                    + ",\"item2\":{\"sa\":\"{\\\"a\\\":{\\\"aenv\\\":\\\"v2\\\"}}\"}}";
+        Set<Object> result = JsonValueExtractor.extractFromStringField(json, "sa", "a", "aenv");
+        
+        assertEquals(2, result.size());
+        assertTrue(result.contains("v1"));
+        assertTrue(result.contains("v2"));
+    }
+
+    @Test
+    public void testStringField_InArray() {
+        // 字符串JSON字段在数组中
+        String json = "{\"items\":[{\"sa\":\"{\\\"a\\\":{\\\"aenv\\\":\\\"arr1\\\"}}\"}"
+                    + ",{\"sa\":\"{\\\"a\\\":{\\\"aenv\\\":\\\"arr2\\\"}}\"}]}";
+        Set<Object> result = JsonValueExtractor.extractFromStringField(json, "sa", "a", "aenv");
+        
+        assertEquals(2, result.size());
+        assertTrue(result.contains("arr1"));
+        assertTrue(result.contains("arr2"));
+    }
+
+    @Test
+    public void testStringField_WithArrayIndex() {
+        // 字符串JSON配合数组索引
+        String json = "{\"sa\":\"{\\\"a\\\":{\\\"items\\\":[{\\\"aenv\\\":\\\"first\\\"},{\\\"aenv\\\":\\\"second\\\"}]}}\"}";
+        Set<Object> result = JsonValueExtractor.extractFromStringFieldWithArrayIndex(json, "sa", "a", "aenv", 0);
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("first"));
+    }
+
+    @Test
+    public void testStringField_InvalidJson() {
+        // 字段值不是有效JSON，应该返回空
+        String json = "{\"sa\":\"not a valid json\"}";
+        Set<Object> result = JsonValueExtractor.extractFromStringField(json, "sa", "a", "aenv");
+        
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    public void testStringField_NotString() {
+        // 字段值不是字符串，应该忽略
+        String json = "{\"sa\":{\"a\":{\"aenv\":\"objectValue\"}}}";
+        Set<Object> result = JsonValueExtractor.extractFromStringField(json, "sa", "a", "aenv");
+        
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    public void testStringField_FieldNotFound() {
+        // 字段不存在
+        String json = "{\"other\":\"{\\\"a\\\":{\\\"aenv\\\":\\\"value\\\"}}\"}";
+        Set<Object> result = JsonValueExtractor.extractFromStringField(json, "sa", "a", "aenv");
+        
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    public void testExtractFirstFromStringField() {
+        // 字符串JSON取第一个元素
+        String json = "{\"sa\":\"{\\\"a\\\":{\\\"items\\\":[{\\\"aenv\\\":\\\"first\\\"},{\\\"aenv\\\":\\\"second\\\"}]}}\"}";
+        Set<Object> result = JsonValueExtractor.extractFirstFromStringField(json, "sa", "a", "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("first"));
+    }
+
+    @Test
+    public void testExtractStringFromStringField() {
+        // 字符串JSON只提取字符串值
+        String json = "{\"sa\":\"{\\\"a\\\":{\\\"aenv\\\":\\\"str\\\",\\\"child\\\":{\\\"aenv\\\":123}}}\"}";
+        Set<String> result = JsonValueExtractor.extractStringFromStringField(json, "sa", "a", "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("str"));
+    }
+
+    // ==================================================================================
+    // 【新增】字符串JSON字段 + 路径链组合测试
+    // ==================================================================================
+
+    @Test
+    public void testStringFieldWithPathChain_Simple() {
+        // 字符串JSON配合路径链
+        String json = "{\"sa\":\"{\\\"a\\\":{\\\"a1\\\":{\\\"aenv\\\":\\\"pathChainValue\\\"}}}\"}";
+        Set<Object> result = JsonValueExtractor.extractFromStringFieldWithPathChain(
+            json, "sa", Arrays.asList("a", "a1"), "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("pathChainValue"));
+    }
+
+    @Test
+    public void testStringFieldWithPathChain_IgnoreOther() {
+        // 字符串JSON配合路径链，忽略其他分支
+        String json = "{\"sa\":\"{\\\"a\\\":{\\\"aenv\\\":\\\"ignored\\\",\\\"a1\\\":{\\\"aenv\\\":\\\"found\\\"}}}\"}";
+        Set<Object> result = JsonValueExtractor.extractFromStringFieldWithPathChain(
+            json, "sa", Arrays.asList("a", "a1"), "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("found"));
+        assertFalse(result.contains("ignored"));
+    }
+
+    @Test
+    public void testStringFieldWithPathChain_DeepTarget() {
+        // 字符串JSON + 路径链 + 深层目标
+        String json = "{\"sa\":\"{\\\"a\\\":{\\\"a1\\\":{\\\"deep\\\":{\\\"aenv\\\":\\\"veryDeep\\\"}}}}\"}";
+        Set<Object> result = JsonValueExtractor.extractFromStringFieldWithPathChain(
+            json, "sa", Arrays.asList("a", "a1"), "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("veryDeep"));
+    }
+
+    @Test
+    public void testStringFieldWithPathChain_WithArrayIndex() {
+        // 字符串JSON + 路径链 + 数组索引
+        String json = "{\"sa\":\"{\\\"a\\\":{\\\"a1\\\":{\\\"items\\\":[{\\\"aenv\\\":\\\"first\\\"},{\\\"aenv\\\":\\\"second\\\"}]}}}\"}";
+        Set<Object> result = JsonValueExtractor.extractFromStringFieldWithPathChainAndArrayIndex(
+            json, "sa", Arrays.asList("a", "a1"), "aenv", 0);
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("first"));
+    }
+
+    @Test
+    public void testStringFieldWithPathChain_MultipleFields() {
+        // 多个字符串JSON字段 + 路径链
+        String json = "{\"item1\":{\"sa\":\"{\\\"a\\\":{\\\"a1\\\":{\\\"aenv\\\":\\\"v1\\\"}}}\"},"
+                    + "\"item2\":{\"sa\":\"{\\\"a\\\":{\\\"a1\\\":{\\\"aenv\\\":\\\"v2\\\"}}}\"}}";
+        Set<Object> result = JsonValueExtractor.extractFromStringFieldWithPathChain(
+            json, "sa", Arrays.asList("a", "a1"), "aenv");
+        
+        assertEquals(2, result.size());
+        assertTrue(result.contains("v1"));
+        assertTrue(result.contains("v2"));
+    }
+
+    // ==================================================================================
     // 综合复杂场景测试
     // ==================================================================================
 
     @Test
     public void testComplexScenario_DeepPathAndTarget() {
-        // pathKey 在深层，targetKey 也在 pathKey 下的深层
         String json = "{\"root\":{\"config\":{\"settings\":{\"a\":{\"options\":{\"values\":{\"aenv\":\"deepBoth\"}}}}}}}";
         Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
         
@@ -216,7 +492,6 @@ public class JsonValueExtractorTest {
 
     @Test
     public void testComplexScenario_MultiplePathKeysWithNestedTargets() {
-        // 多个 pathKey，每个下面有多层 targetKey
         String json = "{"
                 + "\"section1\":{\"a\":{\"aenv\":\"s1-direct\",\"child\":{\"aenv\":\"s1-child\"}}},"
                 + "\"section2\":{\"deep\":{\"a\":{\"aenv\":\"s2-direct\",\"grandchild\":{\"more\":{\"aenv\":\"s2-deep\"}}}}}"
@@ -232,7 +507,6 @@ public class JsonValueExtractorTest {
 
     @Test
     public void testComplexScenario_ArraysEverywhere() {
-        // 数组在各个层级
         String json = "{"
                 + "\"items\":["
                 + "  {\"a\":{\"list\":[{\"aenv\":\"a1\"},{\"aenv\":\"a2\"}]}},"
@@ -249,7 +523,6 @@ public class JsonValueExtractorTest {
 
     @Test
     public void testRealWorldScenario_ConfigFile() {
-        // 模拟真实配置文件场景
         String json = "{"
                 + "\"application\":{"
                 + "  \"profiles\":{"
@@ -273,7 +546,6 @@ public class JsonValueExtractorTest {
                 + "}"
                 + "}";
         
-        // 提取 database 下所有 host
         Set<Object> hosts = JsonValueExtractor.extractAllValues(json, "database", "host");
         
         assertEquals(4, hosts.size());
@@ -307,7 +579,6 @@ public class JsonValueExtractorTest {
 
     @Test
     public void testArrayIndex_AcrossMultipleArrays() {
-        // 多个数组，每个取第一个
         String json = "{\"a\":{\"list1\":[{\"aenv\":\"l1-first\"},{\"aenv\":\"l1-second\"}],"
                     + "\"list2\":[{\"aenv\":\"l2-first\"},{\"aenv\":\"l2-second\"}]}}";
         Set<Object> result = JsonValueExtractor.extractAllValuesWithArrayIndex(json, "a", "aenv", 0);
@@ -396,7 +667,6 @@ public class JsonValueExtractorTest {
 
     @Test
     public void testArrayValueExpansion() {
-        // targetKey 的值本身是数组，应该展开
         String json = "{\"a\":{\"aenv\":[\"v1\",\"v2\",\"v3\"]}}";
         Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
         

@@ -6,12 +6,13 @@
 
 ### 核心特性
 
-- ✅ **pathKey 任意深度**：pathKey 可以在 JSON 的任意深度位置，不限于根节点
-- ✅ **targetKey 任意深度**：targetKey 可以在 pathKey 下的任意深度（子、孙、曾孙等）
+- ✅ **pathKey 任意深度**：pathKey 可以在 JSON 的任意深度位置
+- ✅ **targetKey 任意深度**：targetKey 可以在 pathKey 下的任意深度
+- ✅ **路径链支持**：支持 `a -> a1 -> aenv` 这样的多级路径
+- ✅ **字符串JSON解析**：支持解析字符串类型的JSON字段值
 - ✅ **嵌套同名路径**：a 套 a 时只取最内层子集的值
 - ✅ **去重保序**：使用 LinkedHashSet，自动去重并保留插入顺序
 - ✅ **数组索引**：支持指定只取数组中的第n个元素
-- ✅ **类型保持**：保持原始数据类型（String/Long/Double/Boolean）
 
 ## 环境要求
 
@@ -21,7 +22,7 @@
 
 ## 快速开始
 
-### 1. 添加依赖
+### 添加依赖
 
 ```xml
 <dependency>
@@ -31,35 +32,18 @@
 </dependency>
 ```
 
-### 2. 使用示例
-
-```java
-import com.glm.utils.JsonValueExtractor;
-
-// 示例 JSON：pathKey "a" 在深层，targetKey "aenv" 在 a 的孙子节点
-String json = "{\"root\":{\"config\":{\"a\":{\"level1\":{\"level2\":{\"aenv\":\"value\"}}}}}}";
-
-// 提取所有值
-Set<Object> values = JsonValueExtractor.extractAllValues(json, "a", "aenv");
-// 结果: [value]
-```
+---
 
 ## API 文档
 
-### 主要方法（推荐使用）
+### 1. 基础提取方法
 
 #### `extractAllValues(json, pathKey, targetKey)`
 
 从 JSON 中提取指定路径下目标键的所有值。
 
-**工作原理：**
-1. 在整个 JSON 中递归搜索所有名为 `pathKey` 的节点（任意深度）
-2. 对于每个 `pathKey`：如果内部还有同名 `pathKey`，递归到最内层
-3. 在最内层 `pathKey` 的整个子树中搜索所有 `targetKey`（任意深度）
-4. 收集所有值，去重并保留顺序
-
 ```java
-// pathKey "a" 在深层
+// pathKey "a" 可以在任意深度，targetKey "aenv" 可以在 a 下任意深度
 String json = "{\"root\":{\"config\":{\"a\":{\"deep\":{\"aenv\":\"value\"}}}}}";
 Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
 // 结果: [value]
@@ -67,54 +51,128 @@ Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
 
 ---
 
-### 嵌套同名路径（a 套 a）
+### 2. 路径链提取（新增）
 
-当存在 `pathKey` 嵌套 `pathKey` 的情况时，只取最内层的值：
+#### `extractWithPathChain(json, pathChain, targetKey)`
+
+按顺序依次进入每个路径节点，最后在最终路径下搜索目标键。
+
+**用途**：指定精确路径，如只取 `a` 下的 `a1` 里的 `aenv`，忽略 `a` 下直接的 `aenv`。
 
 ```java
-String json = "{\"a\":{\"aenv\":\"outer\",\"a\":{\"aenv\":\"inner\"}}}";
-Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
-// 结果: [inner]  （outer 不计入，因为外层 a 包含内层 a）
+// 只取 a -> a1 下的 aenv，忽略 a 下直接的 aenv
+String json = "{\"a\":{\"aenv\":\"ignored\",\"a1\":{\"aenv\":\"found\"}}}";
+Set<Object> result = JsonValueExtractor.extractWithPathChain(
+    json, 
+    Arrays.asList("a", "a1"),  // 路径链
+    "aenv"
+);
+// 结果: [found]
 ```
 
-**多层嵌套：**
+**深层路径链：**
 ```java
-String json = "{\"a\":{\"aenv\":\"lv1\",\"a\":{\"aenv\":\"lv2\",\"a\":{\"aenv\":\"lv3\"}}}}";
-Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
-// 结果: [lv3]  （只取最内层）
+// a -> b -> c -> target
+String json = "{\"root\":{\"a\":{\"b\":{\"c\":{\"target\":\"deepValue\"}}}}}";
+Set<Object> result = JsonValueExtractor.extractWithPathChain(
+    json, 
+    Arrays.asList("a", "b", "c"), 
+    "target"
+);
+// 结果: [deepValue]
+```
+
+**相关方法：**
+- `extractWithPathChainAndArrayIndex(json, pathChain, targetKey, arrayIndex)` - 支持数组索引
+- `extractFirstWithPathChain(json, pathChain, targetKey)` - 只取第一个元素
+- `extractStringWithPathChain(json, pathChain, targetKey)` - 只提取字符串值
+
+---
+
+### 3. 字符串JSON字段解析（新增）
+
+#### `extractFromStringField(json, stringFieldKey, pathKey, targetKey)`
+
+某些JSON中，一个字段的值本身是JSON字符串（而不是JSON对象）。此方法会先找到该字段，解析其字符串值为JSON，然后在里面搜索目标。
+
+**用途**：处理嵌入的JSON字符串字段。
+
+```java
+// sa 字段的值是一个JSON字符串
+String json = "{\"sa\":\"{\\\"a\\\":{\\\"aenv\\\":\\\"innerValue\\\"}}\"}";
+Set<Object> result = JsonValueExtractor.extractFromStringField(
+    json, 
+    "sa",      // 字符串JSON字段的键名
+    "a",       // 在解析后的JSON中搜索的路径键
+    "aenv"     // 目标键
+);
+// 结果: [innerValue]
+```
+
+**多个字符串JSON字段：**
+```java
+String json = "{\"item1\":{\"sa\":\"{\\\"a\\\":{\\\"aenv\\\":\\\"v1\\\"}}\"},"
+            + "\"item2\":{\"sa\":\"{\\\"a\\\":{\\\"aenv\\\":\\\"v2\\\"}}\"}}";
+Set<Object> result = JsonValueExtractor.extractFromStringField(json, "sa", "a", "aenv");
+// 结果: [v1, v2]
+```
+
+**相关方法：**
+- `extractFromStringFieldWithArrayIndex(...)` - 支持数组索引
+- `extractFirstFromStringField(...)` - 只取第一个元素
+- `extractStringFromStringField(...)` - 只提取字符串值
+
+---
+
+### 4. 字符串JSON + 路径链组合（新增）
+
+#### `extractFromStringFieldWithPathChain(json, stringFieldKey, pathChain, targetKey)`
+
+结合字符串JSON解析和路径链功能。
+
+```java
+// sa 字段的值是JSON字符串，里面用路径链 a -> a1 查找 aenv
+String json = "{\"sa\":\"{\\\"a\\\":{\\\"a1\\\":{\\\"aenv\\\":\\\"pathChainValue\\\"}}}\"}";
+Set<Object> result = JsonValueExtractor.extractFromStringFieldWithPathChain(
+    json, 
+    "sa", 
+    Arrays.asList("a", "a1"), 
+    "aenv"
+);
+// 结果: [pathChainValue]
 ```
 
 ---
 
-### 数组索引
+### 5. 嵌套同名路径（a 套 a）
 
-#### `extractAllValuesWithArrayIndex(json, pathKey, targetKey, arrayIndex)`
-
-支持指定只取数组中的第n个元素：
+当存在 pathKey 嵌套 pathKey 的情况时，只取最内层的值：
 
 ```java
-String json = "{\"a\":{\"items\":[{\"aenv\":\"first\"},{\"aenv\":\"second\"},{\"aenv\":\"third\"}]}}";
+String json = "{\"a\":{\"aenv\":\"outer\",\"a\":{\"aenv\":\"inner\"}}}";
+Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
+// 结果: [inner]  （outer 不计入）
+```
+
+---
+
+### 6. 数组索引
+
+```java
+String json = "{\"a\":{\"items\":[{\"aenv\":\"first\"},{\"aenv\":\"second\"}]}}";
 
 // 只取每个数组的第一个
 Set<Object> first = JsonValueExtractor.extractAllValuesWithArrayIndex(json, "a", "aenv", 0);
 // 结果: [first]
 
-// 只取每个数组的第二个
-Set<Object> second = JsonValueExtractor.extractAllValuesWithArrayIndex(json, "a", "aenv", 1);
-// 结果: [second]
-```
-
-**跨数组独立处理：**
-```java
-String json = "{\"a\":{\"list1\":[{\"aenv\":\"a1\"},{\"aenv\":\"a2\"}],"
-            + "\"list2\":[{\"aenv\":\"b1\"},{\"aenv\":\"b2\"}]}}";
-Set<Object> result = JsonValueExtractor.extractAllValuesWithArrayIndex(json, "a", "aenv", 0);
-// 结果: [a1, b1]  （两个数组各取第一个）
+// 便捷方法
+Set<Object> same = JsonValueExtractor.extractAllFirstValues(json, "a", "aenv");
+// 结果: [first]
 ```
 
 ---
 
-### 批量提取
+### 7. 批量提取
 
 ```java
 List<String[]> mappings = Arrays.asList(
@@ -122,57 +180,50 @@ List<String[]> mappings = Arrays.asList(
     new String[]{"b", "benv"}
 );
 Map<String, Set<Object>> result = JsonValueExtractor.batchExtract(json, mappings);
-// result.get("aenv") -> a 下所有 aenv 的值
-// result.get("benv") -> b 下所有 benv 的值
-```
-
----
-
-### 字符串专用方法
-
-```java
-// 只提取字符串类型的值
-Set<String> strings = JsonValueExtractor.extractStringValues(json, "a", "aenv");
-
-// 返回 List 形式
-List<String> list = JsonValueExtractor.extractStringValuesAsList(json, "a", "aenv");
 ```
 
 ---
 
 ## 使用场景
 
-### 场景1：深层配置提取
+### 场景1：精确路径提取
 
 ```java
+// 只取 database -> connection 下的 host
 String json = "{"
-    + "\"application\":{"
-    + "  \"profiles\":{"
-    + "    \"database\":{"
-    + "      \"connection\":{"
-    + "        \"host\":\"localhost\","
-    + "        \"replicas\":[{\"host\":\"replica1\"},{\"host\":\"replica2\"}]"
-    + "      }"
-    + "    }"
+    + "\"database\":{"
+    + "  \"host\":\"main-host\","  // 这个会被忽略
+    + "  \"connection\":{"
+    + "    \"host\":\"conn-host\""  // 只取这个
     + "  }"
     + "}"
     + "}";
 
-// 提取 database 下所有 host（包括深层的 replicas）
-Set<Object> hosts = JsonValueExtractor.extractAllValues(json, "database", "host");
-// 结果: [localhost, replica1, replica2]
+Set<Object> hosts = JsonValueExtractor.extractWithPathChain(
+    json, 
+    Arrays.asList("database", "connection"), 
+    "host"
+);
+// 结果: [conn-host]
 ```
 
-### 场景2：多个同名节点
+### 场景2：嵌入JSON字符串
 
 ```java
-String json = "{"
-    + "\"section1\":{\"a\":{\"aenv\":\"s1\"}},"
-    + "\"section2\":{\"nested\":{\"a\":{\"aenv\":\"s2\"}}}"
+// API响应中某个字段是JSON字符串
+String apiResponse = "{"
+    + "\"data\":{"
+    + "  \"config\":\"{\\\"settings\\\":{\\\"env\\\":\\\"production\\\"}}\""
+    + "}"
     + "}";
 
-Set<Object> values = JsonValueExtractor.extractAllValues(json, "a", "aenv");
-// 结果: [s1, s2]  （两个 a 节点的值都提取）
+Set<Object> env = JsonValueExtractor.extractFromStringField(
+    apiResponse, 
+    "config",   // 字符串JSON字段
+    "settings", // 路径键
+    "env"       // 目标键
+);
+// 结果: [production]
 ```
 
 ---
@@ -196,19 +247,22 @@ mvn clean package
 
 ## 版本历史
 
+### v1.4.0 (2026-01-15)
+- ✨ **新增**：路径链支持 - `extractWithPathChain` 系列方法
+- ✨ **新增**：字符串JSON字段解析 - `extractFromStringField` 系列方法
+- ✨ **新增**：字符串JSON + 路径链组合 - `extractFromStringFieldWithPathChain`
+- 📝 增加到 76 个测试用例
+
 ### v1.3.0 (2026-01-15)
-- 🐛 **重要修复**：pathKey 现在支持在 JSON 的任意深度位置
-- 🐛 **重要修复**：targetKey 现在支持在 pathKey 下的任意深度（子、孙、曾孙等）
-- ✨ 重构核心算法，分离搜索 pathKey 和搜索 targetKey 的逻辑
-- 📝 增加 48 个测试用例覆盖各种场景
+- 🐛 修复 pathKey 任意深度搜索
+- 🐛 修复 targetKey 任意深度搜索
 
 ### v1.2.0 (2026-01-15)
-- 🔧 重构代码，将嵌套层数控制在4层以内
-- 🐛 修复三元运算符导致的数字类型错误
+- 🔧 代码重构优化
 
 ### v1.1.0 (2026-01-15)
-- 🆕 新增数组索引支持
-- 🆕 新增嵌套同名路径处理
+- 🆕 数组索引支持
+- 🆕 嵌套同名路径处理
 
 ### v1.0.0 (2026-01-15)
 - 初始版本
@@ -217,7 +271,7 @@ mvn clean package
 
 ## 版本信息
 
-- **版本:** 1.3.0
+- **版本:** 1.4.0
 - **作者:** GLM
 - **JDK:** 1.8+
 - **License:** MIT
