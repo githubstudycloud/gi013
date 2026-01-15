@@ -10,7 +10,7 @@ import static org.junit.Assert.*;
  * JsonValueExtractor 单元测试类
  * 
  * @author GLM
- * @version 1.0.0
+ * @version 1.1.0
  */
 public class JsonValueExtractorTest {
 
@@ -54,7 +54,7 @@ public class JsonValueExtractorTest {
         assertTrue(result.contains("deepValue"));
     }
 
-    // ==================== 去重功能测试 ====================
+    // ==================== 去重并保留顺序测试 ====================
 
     @Test
     public void testDeduplication() {
@@ -75,6 +75,144 @@ public class JsonValueExtractorTest {
         assertTrue(result.contains("env1"));
         assertTrue(result.contains("env2"));
         assertTrue(result.contains("env3"));
+    }
+
+    @Test
+    public void testOrderPreservation() {
+        // 测试保留插入顺序
+        String json = "{\"a\":{\"aenv\":\"first\",\"b\":{\"aenv\":\"second\"},\"c\":{\"aenv\":\"third\"}}}";
+        Set<Object> result = JsonValueExtractor.extractValuesUnderPath(json, "a", "aenv");
+        
+        List<Object> resultList = new ArrayList<>(result);
+        assertEquals(3, resultList.size());
+        assertEquals("first", resultList.get(0));
+        assertEquals("second", resultList.get(1));
+        assertEquals("third", resultList.get(2));
+    }
+
+    // ==================== 数组索引测试 ====================
+
+    @Test
+    public void testArrayIndexFirst() {
+        // 测试只取数组第一个元素
+        String json = "{\"a\":{\"list\":[{\"aenv\":\"first\"},{\"aenv\":\"second\"},{\"aenv\":\"third\"}]}}";
+        Set<Object> result = JsonValueExtractor.extractValuesWithArrayIndex(json, "a", "aenv", 0);
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("first"));
+        assertFalse(result.contains("second"));
+        assertFalse(result.contains("third"));
+    }
+
+    @Test
+    public void testArrayIndexSecond() {
+        // 测试只取数组第二个元素
+        String json = "{\"a\":{\"list\":[{\"aenv\":\"first\"},{\"aenv\":\"second\"},{\"aenv\":\"third\"}]}}";
+        Set<Object> result = JsonValueExtractor.extractValuesWithArrayIndex(json, "a", "aenv", 1);
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("second"));
+    }
+
+    @Test
+    public void testArrayIndexOutOfBounds() {
+        // 测试索引超出范围
+        String json = "{\"a\":{\"list\":[{\"aenv\":\"first\"}]}}";
+        Set<Object> result = JsonValueExtractor.extractValuesWithArrayIndex(json, "a", "aenv", 5);
+        
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    public void testArrayIndexAcrossMultipleArrays() {
+        // 测试跨数组的情况 - 每个数组都取第一个
+        String json = "{\"a\":{\"list1\":[{\"aenv\":\"arr1-first\"},{\"aenv\":\"arr1-second\"}],\"list2\":[{\"aenv\":\"arr2-first\"},{\"aenv\":\"arr2-second\"}]}}";
+        Set<Object> result = JsonValueExtractor.extractValuesWithArrayIndex(json, "a", "aenv", 0);
+        
+        assertEquals(2, result.size());
+        assertTrue(result.contains("arr1-first"));
+        assertTrue(result.contains("arr2-first"));
+        assertFalse(result.contains("arr1-second"));
+        assertFalse(result.contains("arr2-second"));
+    }
+
+    @Test
+    public void testExtractFirstValuesFromArrays() {
+        // 测试便捷方法
+        String json = "{\"a\":{\"list\":[{\"aenv\":\"first\"},{\"aenv\":\"second\"}]}}";
+        Set<Object> result = JsonValueExtractor.extractFirstValuesFromArrays(json, "a", "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("first"));
+    }
+
+    @Test
+    public void testArrayIndexWithMixedStructure() {
+        // 测试混合结构：对象中的值 + 数组中的值
+        String json = "{\"a\":{\"aenv\":\"direct\",\"list\":[{\"aenv\":\"arr-first\"},{\"aenv\":\"arr-second\"}]}}";
+        Set<Object> result = JsonValueExtractor.extractValuesWithArrayIndex(json, "a", "aenv", 0);
+        
+        assertEquals(2, result.size());
+        assertTrue(result.contains("direct")); // 对象中的值不受数组索引影响
+        assertTrue(result.contains("arr-first")); // 数组中只取第一个
+        assertFalse(result.contains("arr-second"));
+    }
+
+    // ==================== 嵌套同名路径测试 (a套a) ====================
+
+    @Test
+    public void testNestedSamePathKey() {
+        // 测试 a 套 a 的情况，只算最内层子集a
+        String json = "{\"a\":{\"aenv\":\"parent\",\"a\":{\"aenv\":\"child\"}}}";
+        Set<Object> result = JsonValueExtractor.extractValuesUnderPath(json, "a", "aenv");
+        
+        // 应该只有child，因为内层a覆盖了外层a
+        assertEquals(1, result.size());
+        assertTrue(result.contains("child"));
+        assertFalse(result.contains("parent"));
+    }
+
+    @Test
+    public void testNestedSamePathKeyMultipleLevels() {
+        // 测试多层嵌套 a -> a -> a
+        String json = "{\"a\":{\"aenv\":\"level1\",\"a\":{\"aenv\":\"level2\",\"a\":{\"aenv\":\"level3\"}}}}";
+        Set<Object> result = JsonValueExtractor.extractValuesUnderPath(json, "a", "aenv");
+        
+        // 应该只有level3，最内层
+        assertEquals(1, result.size());
+        assertTrue(result.contains("level3"));
+    }
+
+    @Test
+    public void testNestedSamePathKeyWithSiblings() {
+        // 测试 a 套 a，同时有其他兄弟节点
+        String json = "{\"a\":{\"aenv\":\"parent\",\"other\":{\"aenv\":\"sibling\"},\"a\":{\"aenv\":\"child\"}}}";
+        Set<Object> result = JsonValueExtractor.extractValuesUnderPath(json, "a", "aenv");
+        
+        // 应该只有child（内层a的值），parent和sibling都不算
+        assertEquals(1, result.size());
+        assertTrue(result.contains("child"));
+    }
+
+    @Test
+    public void testNestedSamePathKeyInArray() {
+        // 测试数组中的嵌套同名路径
+        String json = "{\"a\":{\"list\":[{\"a\":{\"aenv\":\"nested-in-array\"}}]}}";
+        Set<Object> result = JsonValueExtractor.extractValuesUnderPath(json, "a", "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("nested-in-array"));
+    }
+
+    @Test
+    public void testNoNestedSamePathKey() {
+        // 测试没有嵌套同名路径的正常情况
+        String json = "{\"a\":{\"aenv\":\"value1\",\"b\":{\"aenv\":\"value2\"}}}";
+        Set<Object> result = JsonValueExtractor.extractValuesUnderPath(json, "a", "aenv");
+        
+        assertEquals(2, result.size());
+        assertTrue(result.contains("value1"));
+        assertTrue(result.contains("value2"));
     }
 
     // ==================== 复杂嵌套测试 ====================
@@ -114,6 +252,27 @@ public class JsonValueExtractorTest {
         assertTrue(benvValues.contains("benv3"));
     }
 
+    @Test
+    public void testComplexWithArrayIndex() {
+        String json = "{"
+                + "\"a\":{"
+                + "  \"aenv\":\"direct\","
+                + "  \"list\":[{\"aenv\":\"arr1\"},{\"aenv\":\"arr2\"}],"
+                + "  \"nested\":{\"items\":[{\"aenv\":\"nested1\"},{\"aenv\":\"nested2\"}]}"
+                + "}"
+                + "}";
+
+        // 只取每个数组的第一个
+        Set<Object> result = JsonValueExtractor.extractValuesWithArrayIndex(json, "a", "aenv", 0);
+        
+        assertEquals(3, result.size());
+        assertTrue(result.contains("direct"));   // 非数组的直接值
+        assertTrue(result.contains("arr1"));     // 第一个数组的第一个
+        assertTrue(result.contains("nested1"));  // 嵌套数组的第一个
+        assertFalse(result.contains("arr2"));
+        assertFalse(result.contains("nested2"));
+    }
+
     // ==================== extractAllValues 测试 ====================
 
     @Test
@@ -137,6 +296,24 @@ public class JsonValueExtractorTest {
         assertTrue(result.contains("env2"));
     }
 
+    @Test
+    public void testExtractAllValuesWithArrayIndex() {
+        String json = "{\"root\":{\"a\":{\"list\":[{\"aenv\":\"first\"},{\"aenv\":\"second\"}]}}}";
+        Set<Object> result = JsonValueExtractor.extractAllValuesWithArrayIndex(json, "a", "aenv", 0);
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("first"));
+    }
+
+    @Test
+    public void testExtractAllFirstValues() {
+        String json = "{\"root\":{\"a\":{\"list\":[{\"aenv\":\"first\"},{\"aenv\":\"second\"}]}}}";
+        Set<Object> result = JsonValueExtractor.extractAllFirstValues(json, "a", "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("first"));
+    }
+
     // ==================== 批量提取测试 ====================
 
     @Test
@@ -152,6 +329,23 @@ public class JsonValueExtractorTest {
         assertEquals(2, result.size());
         assertTrue(result.get("aenv").contains("env1"));
         assertTrue(result.get("benv").contains("benv1"));
+    }
+
+    @Test
+    public void testBatchExtractWithArrayIndex() {
+        String json = "{\"a\":{\"list\":[{\"aenv\":\"first\"},{\"aenv\":\"second\"}]},\"b\":{\"list\":[{\"benv\":\"b-first\"},{\"benv\":\"b-second\"}]}}";
+        List<String[]> mappings = Arrays.asList(
+                new String[]{"a", "aenv"},
+                new String[]{"b", "benv"}
+        );
+
+        Map<String, Set<Object>> result = JsonValueExtractor.batchExtractWithArrayIndex(json, mappings, 0);
+
+        assertEquals(2, result.size());
+        assertEquals(1, result.get("aenv").size());
+        assertEquals(1, result.get("benv").size());
+        assertTrue(result.get("aenv").contains("first"));
+        assertTrue(result.get("benv").contains("b-first"));
     }
 
     @Test
@@ -232,6 +426,16 @@ public class JsonValueExtractorTest {
         assertEquals(2, result.size());
         assertTrue(result.contains("str1"));
         assertTrue(result.contains("str2"));
+    }
+
+    @Test
+    public void testExtractFirstStringValues() {
+        String json = "{\"a\":{\"list\":[{\"aenv\":\"first\"},{\"aenv\":\"second\"}]}}";
+        Set<String> result = JsonValueExtractor.extractFirstStringValues(json, "a", "aenv");
+        
+        assertEquals(1, result.size());
+        assertTrue(result.contains("first"));
+        assertFalse(result.contains("second"));
     }
 
     // ==================== 边界条件测试 ====================
@@ -319,11 +523,11 @@ public class JsonValueExtractorTest {
         assertTrue(devEnvs.contains("dev-api"));
         assertTrue(devEnvs.contains("dev-web"));
 
-        // 提取生产环境的所有env值
-        Set<Object> prodEnvs = JsonValueExtractor.extractValuesUnderPath(json, "production", "env");
-        assertEquals(2, prodEnvs.size());
-        assertTrue(prodEnvs.contains("prod"));
-        assertTrue(prodEnvs.contains("prod-api"));
+        // 只取每个数组的第一个
+        Set<Object> devEnvsFirst = JsonValueExtractor.extractValuesWithArrayIndex(json, "development", "env", 0);
+        assertEquals(2, devEnvsFirst.size());
+        assertTrue(devEnvsFirst.contains("dev"));
+        assertTrue(devEnvsFirst.contains("dev-api"));
     }
 
     @Test
@@ -339,21 +543,31 @@ public class JsonValueExtractorTest {
                 + "}"
                 + "}";
 
-        List<String[]> mappings = Arrays.asList(
-                new String[]{"database", "host"},
-                new String[]{"cache", "host"}
-        );
+        // 只取第一个replica
+        Set<Object> dbHostsFirst = JsonValueExtractor.extractValuesWithArrayIndex(json, "database", "host", 0);
+        assertEquals(2, dbHostsFirst.size());
+        assertTrue(dbHostsFirst.contains("localhost"));
+        assertTrue(dbHostsFirst.contains("replica1"));
+        assertFalse(dbHostsFirst.contains("replica2"));
+    }
 
-        Map<String, Set<Object>> result = JsonValueExtractor.batchExtract(json, mappings);
+    @Test
+    public void testRealWorldScenario_NestedConfig() {
+        // 模拟配置文件中 config 套 config 的情况
+        String json = "{"
+                + "\"config\":{"
+                + "  \"env\":\"global\","
+                + "  \"config\":{"
+                + "    \"env\":\"override\""
+                + "  }"
+                + "}"
+                + "}";
 
-        Set<Object> dbHosts = result.get("host");
-        // 注意：因为两个都用"host"作为targetKey，结果会合并
-        // 这里我们单独测试
-        Set<Object> dbHostsOnly = JsonValueExtractor.extractValuesUnderPath(json, "database", "host");
-        assertEquals(3, dbHostsOnly.size());
-        assertTrue(dbHostsOnly.contains("localhost"));
-        assertTrue(dbHostsOnly.contains("replica1"));
-        assertTrue(dbHostsOnly.contains("replica2"));
+        Set<Object> result = JsonValueExtractor.extractValuesUnderPath(json, "config", "env");
+        
+        // 应该只取最内层的 config 下的 env
+        assertEquals(1, result.size());
+        assertTrue(result.contains("override"));
+        assertFalse(result.contains("global"));
     }
 }
-
