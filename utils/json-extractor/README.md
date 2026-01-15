@@ -6,14 +6,12 @@
 
 ### 核心特性
 
-- ✅ **递归遍历** - 支持任意深度的嵌套结构（dict/list/混合嵌套）
-- ✅ **路径限定** - 先定位到指定路径节点，再在其子树中搜索
-- ✅ **自动去重** - 使用 `LinkedHashSet` 存储结果，自动去除重复值
-- ✅ **保留顺序** - 去重时保留插入顺序
-- ✅ **数组索引** - 支持指定只取数组中的第n个元素
-- ✅ **嵌套同名路径** - 支持处理 a 套 a 的情况，只取最内层子集
-- ✅ **类型保持** - 保持原始数据类型（String/Long/Double/Boolean）
-- ✅ **批量提取** - 支持一次提取多组路径-键值对
+- ✅ **pathKey 任意深度**：pathKey 可以在 JSON 的任意深度位置，不限于根节点
+- ✅ **targetKey 任意深度**：targetKey 可以在 pathKey 下的任意深度（子、孙、曾孙等）
+- ✅ **嵌套同名路径**：a 套 a 时只取最内层子集的值
+- ✅ **去重保序**：使用 LinkedHashSet，自动去重并保留插入顺序
+- ✅ **数组索引**：支持指定只取数组中的第n个元素
+- ✅ **类型保持**：保持原始数据类型（String/Long/Double/Boolean）
 
 ## 环境要求
 
@@ -25,8 +23,6 @@
 
 ### 1. 添加依赖
 
-将以下依赖添加到你的 `pom.xml`：
-
 ```xml
 <dependency>
     <groupId>com.google.code.gson</groupId>
@@ -35,142 +31,90 @@
 </dependency>
 ```
 
-### 2. 复制工具类
-
-将 `JsonValueExtractor.java` 复制到你的项目中。
-
-### 3. 使用示例
+### 2. 使用示例
 
 ```java
 import com.glm.utils.JsonValueExtractor;
-import java.util.*;
 
-public class Example {
-    public static void main(String[] args) {
-        String json = "{"
-            + "\"a\":{"
-            + "  \"aenv\":\"env1\","
-            + "  \"nested\":{\"aenv\":\"env2\"},"
-            + "  \"list\":[{\"aenv\":\"env3\"},{\"aenv\":\"env1\"}]"
-            + "},"
-            + "\"b\":{"
-            + "  \"benv\":\"benv1\","
-            + "  \"config\":[{\"benv\":\"benv2\"}]"
-            + "}"
-            + "}";
+// 示例 JSON：pathKey "a" 在深层，targetKey "aenv" 在 a 的孙子节点
+String json = "{\"root\":{\"config\":{\"a\":{\"level1\":{\"level2\":{\"aenv\":\"value\"}}}}}}";
 
-        // 提取 a 下所有 aenv 的值（去重，保留顺序）
-        Set<Object> aenvValues = JsonValueExtractor.extractValuesUnderPath(json, "a", "aenv");
-        System.out.println("aenv values: " + aenvValues);
-        // 输出: aenv values: [env1, env2, env3] （保留顺序）
-    }
-}
+// 提取所有值
+Set<Object> values = JsonValueExtractor.extractAllValues(json, "a", "aenv");
+// 结果: [value]
 ```
 
 ## API 文档
 
-### 基础方法
+### 主要方法（推荐使用）
 
-#### `extractValuesUnderPath(String jsonString, String pathKey, String targetKey)`
+#### `extractAllValues(json, pathKey, targetKey)`
 
-从 JSON 字符串的指定路径下提取目标键的所有值（去重，保留顺序）。
+从 JSON 中提取指定路径下目标键的所有值。
+
+**工作原理：**
+1. 在整个 JSON 中递归搜索所有名为 `pathKey` 的节点（任意深度）
+2. 对于每个 `pathKey`：如果内部还有同名 `pathKey`，递归到最内层
+3. 在最内层 `pathKey` 的整个子树中搜索所有 `targetKey`（任意深度）
+4. 收集所有值，去重并保留顺序
 
 ```java
-Set<Object> values = JsonValueExtractor.extractValuesUnderPath(json, "a", "aenv");
+// pathKey "a" 在深层
+String json = "{\"root\":{\"config\":{\"a\":{\"deep\":{\"aenv\":\"value\"}}}}}";
+Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
+// 结果: [value]
 ```
 
 ---
 
-### 数组索引方法 🆕
+### 嵌套同名路径（a 套 a）
 
-#### `extractValuesWithArrayIndex(String jsonString, String pathKey, String targetKey, int arrayIndex)`
-
-从 JSON 字符串的指定路径下提取目标键的值，支持指定数组索引。
-
-**参数：**
-- `arrayIndex` - 数组索引（0-based），-1 表示遍历所有元素
+当存在 `pathKey` 嵌套 `pathKey` 的情况时，只取最内层的值：
 
 ```java
-// 只取每个数组的第一个元素
-Set<Object> first = JsonValueExtractor.extractValuesWithArrayIndex(json, "a", "aenv", 0);
-
-// 只取每个数组的第二个元素
-Set<Object> second = JsonValueExtractor.extractValuesWithArrayIndex(json, "a", "aenv", 1);
-```
-
-**示例场景：**
-
-```java
-String json = "{\"a\":{\"list\":[{\"aenv\":\"first\"},{\"aenv\":\"second\"},{\"aenv\":\"third\"}]}}";
-
-// 取所有（默认行为）
-Set<Object> all = JsonValueExtractor.extractValuesUnderPath(json, "a", "aenv");
-// 结果: [first, second, third]
-
-// 只取第一个
-Set<Object> first = JsonValueExtractor.extractValuesWithArrayIndex(json, "a", "aenv", 0);
-// 结果: [first]
-```
-
-#### `extractFirstValuesFromArrays(String jsonString, String pathKey, String targetKey)`
-
-便捷方法，等价于 `extractValuesWithArrayIndex(json, pathKey, targetKey, 0)`
-
-```java
-Set<Object> first = JsonValueExtractor.extractFirstValuesFromArrays(json, "a", "aenv");
-```
-
----
-
-### 嵌套同名路径处理 🆕
-
-当存在 **a 套 a** 的情况时，工具类只处理最内层的子集。
-
-```java
-String json = "{\"a\":{\"aenv\":\"parent\",\"a\":{\"aenv\":\"child\"}}}";
-
-Set<Object> values = JsonValueExtractor.extractValuesUnderPath(json, "a", "aenv");
-// 结果: [child]  （只取最内层的 a 下的值，parent 不计入）
+String json = "{\"a\":{\"aenv\":\"outer\",\"a\":{\"aenv\":\"inner\"}}}";
+Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
+// 结果: [inner]  （outer 不计入，因为外层 a 包含内层 a）
 ```
 
 **多层嵌套：**
-
 ```java
-String json = "{\"a\":{\"aenv\":\"level1\",\"a\":{\"aenv\":\"level2\",\"a\":{\"aenv\":\"level3\"}}}}";
-
-Set<Object> values = JsonValueExtractor.extractValuesUnderPath(json, "a", "aenv");
-// 结果: [level3]  （只取最内层）
+String json = "{\"a\":{\"aenv\":\"lv1\",\"a\":{\"aenv\":\"lv2\",\"a\":{\"aenv\":\"lv3\"}}}}";
+Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
+// 结果: [lv3]  （只取最内层）
 ```
 
 ---
 
-### 递归搜索方法
+### 数组索引
 
-#### `extractAllValues(String jsonString, String pathKey, String targetKey)`
+#### `extractAllValuesWithArrayIndex(json, pathKey, targetKey, arrayIndex)`
 
-递归搜索 pathKey，然后在其下提取目标键的值。适用于 pathKey 本身也嵌套在任意深度的情况。
+支持指定只取数组中的第n个元素：
 
 ```java
-String json = "{\"root\":{\"config\":{\"a\":{\"aenv\":\"env1\"}}}}";
-Set<Object> values = JsonValueExtractor.extractAllValues(json, "a", "aenv");
-// 结果: [env1]
+String json = "{\"a\":{\"items\":[{\"aenv\":\"first\"},{\"aenv\":\"second\"},{\"aenv\":\"third\"}]}}";
+
+// 只取每个数组的第一个
+Set<Object> first = JsonValueExtractor.extractAllValuesWithArrayIndex(json, "a", "aenv", 0);
+// 结果: [first]
+
+// 只取每个数组的第二个
+Set<Object> second = JsonValueExtractor.extractAllValuesWithArrayIndex(json, "a", "aenv", 1);
+// 结果: [second]
 ```
 
-#### `extractAllValuesWithArrayIndex(String jsonString, String pathKey, String targetKey, int arrayIndex)`
-
-递归搜索并支持数组索引。
-
-#### `extractAllFirstValues(String jsonString, String pathKey, String targetKey)`
-
-递归搜索，只取每个数组的第一个元素。
+**跨数组独立处理：**
+```java
+String json = "{\"a\":{\"list1\":[{\"aenv\":\"a1\"},{\"aenv\":\"a2\"}],"
+            + "\"list2\":[{\"aenv\":\"b1\"},{\"aenv\":\"b2\"}]}}";
+Set<Object> result = JsonValueExtractor.extractAllValuesWithArrayIndex(json, "a", "aenv", 0);
+// 结果: [a1, b1]  （两个数组各取第一个）
+```
 
 ---
 
-### 批量提取方法
-
-#### `batchExtract(String jsonString, List<String[]> mappings)`
-
-批量提取多组 pathKey -> targetKey 的值。
+### 批量提取
 
 ```java
 List<String[]> mappings = Arrays.asList(
@@ -178,136 +122,102 @@ List<String[]> mappings = Arrays.asList(
     new String[]{"b", "benv"}
 );
 Map<String, Set<Object>> result = JsonValueExtractor.batchExtract(json, mappings);
+// result.get("aenv") -> a 下所有 aenv 的值
+// result.get("benv") -> b 下所有 benv 的值
 ```
-
-#### `batchExtractWithArrayIndex(String jsonString, List<String[]> mappings, int arrayIndex)`
-
-批量提取，支持数组索引。
 
 ---
 
 ### 字符串专用方法
 
-| 方法 | 说明 |
-|------|------|
-| `extractStringValues` | 仅提取字符串类型的值 |
-| `extractStringValuesAsList` | 提取字符串值并返回 List |
-| `extractFirstStringValues` | 只取每个数组第一个的字符串值 |
+```java
+// 只提取字符串类型的值
+Set<String> strings = JsonValueExtractor.extractStringValues(json, "a", "aenv");
+
+// 返回 List 形式
+List<String> list = JsonValueExtractor.extractStringValuesAsList(json, "a", "aenv");
+```
 
 ---
 
 ## 使用场景
 
-### 场景1：提取环境配置（只取第一个）
+### 场景1：深层配置提取
 
 ```java
 String json = "{"
-    + "\"development\":{"
-    + "  \"env\":\"dev\","
-    + "  \"services\":[{\"env\":\"dev-api\"},{\"env\":\"dev-web\"}]"
-    + "}"
-    + "}";
-
-// 取所有
-Set<Object> all = JsonValueExtractor.extractValuesUnderPath(json, "development", "env");
-// 结果: [dev, dev-api, dev-web]
-
-// 只取每个数组的第一个
-Set<Object> first = JsonValueExtractor.extractValuesWithArrayIndex(json, "development", "env", 0);
-// 结果: [dev, dev-api]
-```
-
-### 场景2：处理嵌套配置覆盖
-
-```java
-String json = "{"
-    + "\"config\":{"
-    + "  \"env\":\"global\","
-    + "  \"config\":{"
-    + "    \"env\":\"override\""
+    + "\"application\":{"
+    + "  \"profiles\":{"
+    + "    \"database\":{"
+    + "      \"connection\":{"
+    + "        \"host\":\"localhost\","
+    + "        \"replicas\":[{\"host\":\"replica1\"},{\"host\":\"replica2\"}]"
+    + "      }"
+    + "    }"
     + "  }"
     + "}"
     + "}";
 
-Set<Object> values = JsonValueExtractor.extractValuesUnderPath(json, "config", "env");
-// 结果: [override]  （内层 config 覆盖外层）
+// 提取 database 下所有 host（包括深层的 replicas）
+Set<Object> hosts = JsonValueExtractor.extractAllValues(json, "database", "host");
+// 结果: [localhost, replica1, replica2]
 ```
 
-### 场景3：跨数组独立处理
+### 场景2：多个同名节点
 
 ```java
-String json = "{\"a\":{\"list1\":[{\"aenv\":\"a1\"},{\"aenv\":\"a2\"}],\"list2\":[{\"aenv\":\"b1\"},{\"aenv\":\"b2\"}]}}";
+String json = "{"
+    + "\"section1\":{\"a\":{\"aenv\":\"s1\"}},"
+    + "\"section2\":{\"nested\":{\"a\":{\"aenv\":\"s2\"}}}"
+    + "}";
 
-// 每个数组都取第一个（跨数组独立）
-Set<Object> result = JsonValueExtractor.extractValuesWithArrayIndex(json, "a", "aenv", 0);
-// 结果: [a1, b1]  （两个数组各取第一个）
+Set<Object> values = JsonValueExtractor.extractAllValues(json, "a", "aenv");
+// 结果: [s1, s2]  （两个 a 节点的值都提取）
 ```
 
 ---
 
 ## 构建与测试
 
-### 编译
-
 ```bash
 cd utils/json-extractor
+
+# 编译
 mvn clean compile
-```
 
-### 运行测试
-
-```bash
+# 运行测试
 mvn test
-```
 
-### 打包
-
-```bash
+# 打包
 mvn clean package
-```
-
----
-
-## 项目结构
-
-```
-utils/json-extractor/
-├── pom.xml
-├── README.md
-├── TEST_REPORT.md
-├── .gitignore
-└── src/
-    ├── main/java/com/glm/utils/
-    │   └── JsonValueExtractor.java
-    └── test/java/com/glm/utils/
-        └── JsonValueExtractorTest.java
 ```
 
 ---
 
 ## 版本历史
 
+### v1.3.0 (2026-01-15)
+- 🐛 **重要修复**：pathKey 现在支持在 JSON 的任意深度位置
+- 🐛 **重要修复**：targetKey 现在支持在 pathKey 下的任意深度（子、孙、曾孙等）
+- ✨ 重构核心算法，分离搜索 pathKey 和搜索 targetKey 的逻辑
+- 📝 增加 48 个测试用例覆盖各种场景
+
 ### v1.2.0 (2026-01-15)
 - 🔧 重构代码，将嵌套层数控制在4层以内
-- 📝 添加详细注释，按功能分成10个部分
 - 🐛 修复三元运算符导致的数字类型错误
-- ✨ 使用Early Return模式优化代码结构
 
 ### v1.1.0 (2026-01-15)
-- 🆕 新增数组索引支持 (`extractValuesWithArrayIndex`)
-- 🆕 新增嵌套同名路径处理（a套a只取最内层）
-- 🆕 新增便捷方法 `extractFirstValuesFromArrays`、`extractAllFirstValues`
-- ✅ 确保去重时保留插入顺序
+- 🆕 新增数组索引支持
+- 🆕 新增嵌套同名路径处理
 
 ### v1.0.0 (2026-01-15)
 - 初始版本
-- 基础的递归提取和去重功能
 
 ---
 
 ## 版本信息
 
-- **版本:** 1.2.0
+- **版本:** 1.3.0
 - **作者:** GLM
 - **JDK:** 1.8+
 - **License:** MIT

@@ -12,262 +12,121 @@ import java.util.stream.Collectors;
 /**
  * JSON嵌套值提取工具类
  * 
- * <p>从嵌套的JSON结构中递归提取指定路径下特定键的所有值并去重（保留顺序）。
- * 支持任意深度的嵌套结构（包括嵌套的对象、数组、数组中的对象等）。</p>
+ * <p>从嵌套的JSON结构中递归提取指定路径下特定键的所有值并去重（保留顺序）。</p>
  * 
  * <h3>核心特性：</h3>
  * <ul>
+ *   <li><b>任意深度搜索pathKey</b>：pathKey可以在JSON的任意深度位置，不限于根节点</li>
+ *   <li><b>任意深度搜索targetKey</b>：targetKey可以在pathKey下的任意深度（子孙、曾孙等）</li>
+ *   <li><b>嵌套同名路径</b>：pathKey内部如果还有pathKey，只取最内层的子集</li>
  *   <li><b>去重保序</b>：使用LinkedHashSet，自动去重并保留插入顺序</li>
- *   <li><b>数组索引</b>：支持指定只取数组中的第n个元素（同一数组内生效，跨数组独立）</li>
- *   <li><b>嵌套同名路径</b>：支持处理 a 套 a 的情况，只取最内层子集的值</li>
- *   <li><b>类型保持</b>：保持原始数据类型（String/Long/Double/Boolean）</li>
- *   <li><b>批量提取</b>：支持一次提取多组路径-键值对</li>
+ *   <li><b>数组索引</b>：支持指定只取数组中的第n个元素</li>
  * </ul>
  * 
  * <h3>使用示例：</h3>
  * <pre>{@code
- * // 基础用法：提取 a 路径下所有 aenv 的值
- * String json = "{\"a\":{\"aenv\":\"env1\",\"nested\":{\"aenv\":\"env2\"}}}";
- * Set<Object> values = JsonValueExtractor.extractValuesUnderPath(json, "a", "aenv");
- * // 结果: [env1, env2]（保留顺序）
- * 
- * // 数组索引：只取每个数组的第一个元素
- * String json2 = "{\"a\":{\"list\":[{\"aenv\":\"first\"},{\"aenv\":\"second\"}]}}";
- * Set<Object> first = JsonValueExtractor.extractValuesWithArrayIndex(json2, "a", "aenv", 0);
- * // 结果: [first]
+ * // 示例JSON：pathKey "a" 在深层，targetKey "aenv" 在 a 的孙子节点
+ * String json = "{\"root\":{\"config\":{\"a\":{\"level1\":{\"level2\":{\"aenv\":\"value\"}}}}}}";
+ * Set<Object> values = JsonValueExtractor.extractAllValues(json, "a", "aenv");
+ * // 结果: [value]
  * 
  * // 嵌套同名路径：a 套 a 时只取最内层
- * String json3 = "{\"a\":{\"aenv\":\"parent\",\"a\":{\"aenv\":\"child\"}}}";
- * Set<Object> inner = JsonValueExtractor.extractValuesUnderPath(json3, "a", "aenv");
- * // 结果: [child]（parent不计入）
+ * String json2 = "{\"a\":{\"aenv\":\"parent\",\"a\":{\"aenv\":\"child\"}}}";
+ * Set<Object> inner = JsonValueExtractor.extractAllValues(json2, "a", "aenv");
+ * // 结果: [child]（parent不计入，因为外层a包含内层a）
+ * 
+ * // 数组索引：只取每个数组的第一个元素
+ * String json3 = "{\"a\":{\"list\":[{\"aenv\":\"first\"},{\"aenv\":\"second\"}]}}";
+ * Set<Object> first = JsonValueExtractor.extractAllFirstValues(json3, "a", "aenv");
+ * // 结果: [first]
  * }</pre>
  * 
- * <h3>设计说明：</h3>
- * <ul>
- *   <li>所有公开方法均为静态方法，工具类不可实例化</li>
- *   <li>代码嵌套层数控制在4层以内，通过拆分辅助方法实现</li>
- *   <li>使用早返回（Early Return）模式减少嵌套</li>
- * </ul>
- * 
  * @author GLM
- * @version 1.2.0
+ * @version 1.3.0
  * @since JDK 1.8
  */
 public class JsonValueExtractor {
 
     /**
      * 常量：表示不限制数组索引，遍历数组中的所有元素
-     * <p>当 arrayIndex 参数为此值时，会遍历数组的每一个元素</p>
      */
     public static final int ARRAY_INDEX_ALL = -1;
 
     /**
      * 私有构造函数，防止工具类被实例化
-     * 
-     * @throws UnsupportedOperationException 总是抛出，禁止实例化
      */
     private JsonValueExtractor() {
         throw new UnsupportedOperationException("Utility class cannot be instantiated");
     }
 
     // ==================================================================================
-    // 第一部分：基础提取方法
-    // 这些方法是最常用的入口，从指定路径下提取目标键的值
+    // 第一部分：主要公开方法
+    // 推荐使用 extractAllValues 系列方法，支持 pathKey 在任意深度
     // ==================================================================================
 
     /**
-     * 从JSON字符串的指定路径下提取目标键的所有值
+     * 【推荐】从JSON中提取指定路径下目标键的所有值
      * 
-     * <p>这是最常用的方法，会遍历路径下的所有嵌套结构（包括数组中的所有元素），
-     * 提取所有匹配目标键的值，自动去重并保留插入顺序。</p>
+     * <p><b>工作原理：</b></p>
+     * <ol>
+     *   <li>在整个JSON中递归搜索所有名为 pathKey 的节点</li>
+     *   <li>对于每个找到的 pathKey 节点：
+     *     <ul>
+     *       <li>如果其内部还有同名的 pathKey（嵌套），则只处理最内层</li>
+     *       <li>在最内层 pathKey 的整个子树中搜索所有 targetKey</li>
+     *     </ul>
+     *   </li>
+     *   <li>收集所有找到的 targetKey 的值，去重并保留顺序</li>
+     * </ol>
      * 
      * <h4>示例：</h4>
      * <pre>{@code
-     * String json = "{\"config\":{\"env\":\"dev\",\"db\":{\"env\":\"db-dev\"}}}";
-     * Set<Object> envs = JsonValueExtractor.extractValuesUnderPath(json, "config", "env");
-     * // 结果: [dev, db-dev]
-     * }</pre>
-     *
-     * @param jsonString JSON字符串，不能为null或空
-     * @param pathKey    限定搜索的路径键名（如 "a" 或 "config"），不能为null
-     * @param targetKey  要提取的目标键名（如 "aenv" 或 "env"），不能为null
-     * @return 去重后的值集合，使用LinkedHashSet保留插入顺序；如果未找到则返回空集合
-     * @throws IllegalArgumentException 如果任何参数为null或jsonString为空
-     */
-    public static Set<Object> extractValuesUnderPath(String jsonString, String pathKey, String targetKey) {
-        return extractValuesWithArrayIndex(jsonString, pathKey, targetKey, ARRAY_INDEX_ALL);
-    }
-
-    /**
-     * 从JsonObject的指定路径下提取目标键的所有值
-     * 
-     * <p>适用于已经解析好的JsonObject对象，避免重复解析JSON字符串。</p>
-     *
-     * @param jsonObject JSON对象，可以为null（返回空集合）
-     * @param pathKey    限定搜索的路径键名，不能为null
-     * @param targetKey  要提取的目标键名，不能为null
-     * @return 去重后的值集合，使用LinkedHashSet保留插入顺序
-     * @throws IllegalArgumentException 如果pathKey或targetKey为null
-     */
-    public static Set<Object> extractValuesUnderPath(JsonObject jsonObject, String pathKey, String targetKey) {
-        return extractValuesWithArrayIndex(jsonObject, pathKey, targetKey, ARRAY_INDEX_ALL);
-    }
-
-    // ==================================================================================
-    // 第二部分：带数组索引的提取方法
-    // 这些方法支持指定只取数组中的第n个元素，用于减少重复项
-    // ==================================================================================
-
-    /**
-     * 从JSON字符串的指定路径下提取目标键的值，支持指定数组索引
-     * 
-     * <p><b>数组索引规则：</b></p>
-     * <ul>
-     *   <li>arrayIndex = -1 (ARRAY_INDEX_ALL)：遍历数组中的所有元素（默认行为）</li>
-     *   <li>arrayIndex = 0：只取每个数组的第一个元素</li>
-     *   <li>arrayIndex = n：只取每个数组的第n个元素（0-based）</li>
-     *   <li>如果索引超出数组范围，该数组不返回任何值</li>
-     * </ul>
-     * 
-     * <p><b>重要说明：</b>数组索引只影响同一数组内的元素选择，跨数组的元素各自独立处理。</p>
-     * 
-     * <h4>示例：</h4>
-     * <pre>{@code
-     * // 两个数组各取第一个
-     * String json = "{\"a\":{\"list1\":[{\"env\":\"a1\"},{\"env\":\"a2\"}]," +
-     *                      "\"list2\":[{\"env\":\"b1\"},{\"env\":\"b2\"}]}}";
-     * Set<Object> result = JsonValueExtractor.extractValuesWithArrayIndex(json, "a", "env", 0);
-     * // 结果: [a1, b1]（两个数组各取第一个）
-     * }</pre>
-     *
-     * @param jsonString JSON字符串，不能为null或空
-     * @param pathKey    限定搜索的路径键名，不能为null
-     * @param targetKey  要提取的目标键名，不能为null
-     * @param arrayIndex 数组索引（0-based），-1表示遍历所有元素
-     * @return 去重后的值集合，使用LinkedHashSet保留插入顺序
-     * @throws IllegalArgumentException 如果任何必需参数为null或jsonString为空
-     */
-    public static Set<Object> extractValuesWithArrayIndex(String jsonString, String pathKey, 
-                                                           String targetKey, int arrayIndex) {
-        // 参数校验
-        validateRequiredInputs(jsonString, pathKey, targetKey);
-
-        // 解析JSON
-        JsonElement root = JsonParser.parseString(jsonString);
-        if (!root.isJsonObject()) {
-            return Collections.emptySet();
-        }
-
-        // 检查路径是否存在
-        JsonObject jsonObject = root.getAsJsonObject();
-        if (!jsonObject.has(pathKey)) {
-            return Collections.emptySet();
-        }
-
-        // 提取值（处理嵌套同名路径）
-        JsonElement pathElement = jsonObject.get(pathKey);
-        return extractFromElement(pathElement, pathKey, targetKey, arrayIndex);
-    }
-
-    /**
-     * 从JsonObject的指定路径下提取目标键的值，支持指定数组索引
-     *
-     * @param jsonObject JSON对象，可以为null（返回空集合）
-     * @param pathKey    限定搜索的路径键名，不能为null
-     * @param targetKey  要提取的目标键名，不能为null
-     * @param arrayIndex 数组索引（0-based），-1表示遍历所有元素
-     * @return 去重后的值集合，使用LinkedHashSet保留插入顺序
-     * @throws IllegalArgumentException 如果pathKey或targetKey为null
-     */
-    public static Set<Object> extractValuesWithArrayIndex(JsonObject jsonObject, String pathKey, 
-                                                           String targetKey, int arrayIndex) {
-        if (jsonObject == null) {
-            return Collections.emptySet();
-        }
-        validatePathAndTargetKey(pathKey, targetKey);
-
-        if (!jsonObject.has(pathKey)) {
-            return Collections.emptySet();
-        }
-
-        JsonElement pathElement = jsonObject.get(pathKey);
-        return extractFromElement(pathElement, pathKey, targetKey, arrayIndex);
-    }
-
-    /**
-     * 便捷方法：只取每个数组的第一个元素
-     * 
-     * <p>等价于 {@code extractValuesWithArrayIndex(json, pathKey, targetKey, 0)}</p>
-     * 
-     * <h4>使用场景：</h4>
-     * <p>当数组中有多个重复配置，通常只需要第一个（主配置）时使用此方法。</p>
-     *
-     * @param jsonString JSON字符串
-     * @param pathKey    限定搜索的路径键名
-     * @param targetKey  要提取的目标键名
-     * @return 去重后的值集合
-     */
-    public static Set<Object> extractFirstValuesFromArrays(String jsonString, String pathKey, String targetKey) {
-        return extractValuesWithArrayIndex(jsonString, pathKey, targetKey, 0);
-    }
-
-    // ==================================================================================
-    // 第三部分：递归搜索方法
-    // 这些方法会递归搜索整个JSON结构找到pathKey，适用于pathKey位置不确定的情况
-    // ==================================================================================
-
-    /**
-     * 从任意嵌套结构中递归搜索路径键，然后在其下提取目标键的所有值
-     * 
-     * <p><b>与 extractValuesUnderPath 的区别：</b></p>
-     * <ul>
-     *   <li>extractValuesUnderPath：只在JSON根对象的直接子节点中查找pathKey</li>
-     *   <li>extractAllValues：递归搜索整个JSON结构，在任意深度找到pathKey</li>
-     * </ul>
-     * 
-     * <h4>示例：</h4>
-     * <pre>{@code
-     * // pathKey "a" 嵌套在深层
-     * String json = "{\"root\":{\"config\":{\"a\":{\"env\":\"value\"}}}}";
-     * Set<Object> values = JsonValueExtractor.extractAllValues(json, "a", "env");
+     * // pathKey "a" 可以在任意深度
+     * String json = "{\"root\":{\"config\":{\"a\":{\"deep\":{\"aenv\":\"value\"}}}}}";
+     * Set<Object> result = JsonValueExtractor.extractAllValues(json, "a", "aenv");
      * // 结果: [value]
      * }</pre>
-     * 
-     * <p><b>嵌套同名路径处理：</b>如果存在 a 套 a 的情况，只处理最内层的子集。</p>
      *
-     * @param jsonString JSON字符串，不能为null或空
-     * @param pathKey    限定搜索的路径键名，不能为null
-     * @param targetKey  要提取的目标键名，不能为null
-     * @return 去重后的值集合，使用LinkedHashSet保留插入顺序
-     * @throws IllegalArgumentException 如果任何必需参数为null或jsonString为空
+     * @param jsonString JSON字符串
+     * @param pathKey    路径键名（如 "a"），可以在JSON的任意深度
+     * @param targetKey  目标键名（如 "aenv"），可以在pathKey下的任意深度
+     * @return 去重后的值集合，保留插入顺序
      */
     public static Set<Object> extractAllValues(String jsonString, String pathKey, String targetKey) {
         return extractAllValuesWithArrayIndex(jsonString, pathKey, targetKey, ARRAY_INDEX_ALL);
     }
 
     /**
-     * 从任意嵌套结构中递归搜索路径键，支持指定数组索引
+     * 从JSON中提取值，支持指定数组索引
+     * 
+     * <p>数组索引说明：</p>
+     * <ul>
+     *   <li>-1 (ARRAY_INDEX_ALL)：遍历所有数组元素</li>
+     *   <li>0：只取每个数组的第一个元素</li>
+     *   <li>n：只取每个数组的第n个元素（0-based）</li>
+     * </ul>
+     * 
+     * <p><b>注意：</b>数组索引只影响同一数组内的选择，跨数组各自独立处理。</p>
      *
-     * @param jsonString JSON字符串，不能为null或空
-     * @param pathKey    限定搜索的路径键名，不能为null
-     * @param targetKey  要提取的目标键名，不能为null
-     * @param arrayIndex 数组索引（0-based），-1表示遍历所有元素
-     * @return 去重后的值集合，使用LinkedHashSet保留插入顺序
-     * @throws IllegalArgumentException 如果任何必需参数为null或jsonString为空
+     * @param jsonString JSON字符串
+     * @param pathKey    路径键名
+     * @param targetKey  目标键名
+     * @param arrayIndex 数组索引，-1表示遍历所有
+     * @return 去重后的值集合
      */
     public static Set<Object> extractAllValuesWithArrayIndex(String jsonString, String pathKey, 
                                                               String targetKey, int arrayIndex) {
-        validateRequiredInputs(jsonString, pathKey, targetKey);
+        validateInputs(jsonString, pathKey, targetKey);
         JsonElement root = JsonParser.parseString(jsonString);
-        return searchAndExtract(root, pathKey, targetKey, arrayIndex);
+        return findPathKeysAndExtract(root, pathKey, targetKey, arrayIndex);
     }
 
     /**
-     * 便捷方法：递归搜索路径键，只取每个数组的第一个元素
+     * 便捷方法：只取每个数组的第一个元素
      *
      * @param jsonString JSON字符串
-     * @param pathKey    限定搜索的路径键名
-     * @param targetKey  要提取的目标键名
+     * @param pathKey    路径键名
+     * @param targetKey  目标键名
      * @return 去重后的值集合
      */
     public static Set<Object> extractAllFirstValues(String jsonString, String pathKey, String targetKey) {
@@ -275,43 +134,107 @@ public class JsonValueExtractor {
     }
 
     // ==================================================================================
-    // 第四部分：批量提取方法
-    // 这些方法支持一次调用提取多组路径-键值对，提高效率
+    // 第二部分：兼容方法（保留向后兼容）
+    // 这些方法内部调用 extractAllValues 系列
+    // ==================================================================================
+
+    /**
+     * 从JSON中提取指定路径下目标键的所有值
+     * 
+     * <p><b>注意：</b>此方法与 extractAllValues 功能相同，保留是为了向后兼容。
+     * 推荐使用 extractAllValues 方法。</p>
+     *
+     * @param jsonString JSON字符串
+     * @param pathKey    路径键名
+     * @param targetKey  目标键名
+     * @return 去重后的值集合
+     */
+    public static Set<Object> extractValuesUnderPath(String jsonString, String pathKey, String targetKey) {
+        return extractAllValues(jsonString, pathKey, targetKey);
+    }
+
+    /**
+     * 从JsonObject中提取值
+     *
+     * @param jsonObject JSON对象
+     * @param pathKey    路径键名
+     * @param targetKey  目标键名
+     * @return 去重后的值集合
+     */
+    public static Set<Object> extractValuesUnderPath(JsonObject jsonObject, String pathKey, String targetKey) {
+        if (jsonObject == null) {
+            return Collections.emptySet();
+        }
+        validatePathAndTargetKey(pathKey, targetKey);
+        return findPathKeysAndExtract(jsonObject, pathKey, targetKey, ARRAY_INDEX_ALL);
+    }
+
+    /**
+     * 从JSON中提取值，支持数组索引
+     *
+     * @param jsonString JSON字符串
+     * @param pathKey    路径键名
+     * @param targetKey  目标键名
+     * @param arrayIndex 数组索引
+     * @return 去重后的值集合
+     */
+    public static Set<Object> extractValuesWithArrayIndex(String jsonString, String pathKey, 
+                                                           String targetKey, int arrayIndex) {
+        return extractAllValuesWithArrayIndex(jsonString, pathKey, targetKey, arrayIndex);
+    }
+
+    /**
+     * 从JsonObject中提取值，支持数组索引
+     *
+     * @param jsonObject JSON对象
+     * @param pathKey    路径键名
+     * @param targetKey  目标键名
+     * @param arrayIndex 数组索引
+     * @return 去重后的值集合
+     */
+    public static Set<Object> extractValuesWithArrayIndex(JsonObject jsonObject, String pathKey, 
+                                                           String targetKey, int arrayIndex) {
+        if (jsonObject == null) {
+            return Collections.emptySet();
+        }
+        validatePathAndTargetKey(pathKey, targetKey);
+        return findPathKeysAndExtract(jsonObject, pathKey, targetKey, arrayIndex);
+    }
+
+    /**
+     * 便捷方法：只取每个数组的第一个元素
+     *
+     * @param jsonString JSON字符串
+     * @param pathKey    路径键名
+     * @param targetKey  目标键名
+     * @return 去重后的值集合
+     */
+    public static Set<Object> extractFirstValuesFromArrays(String jsonString, String pathKey, String targetKey) {
+        return extractAllFirstValues(jsonString, pathKey, targetKey);
+    }
+
+    // ==================================================================================
+    // 第三部分：批量提取方法
     // ==================================================================================
 
     /**
      * 批量提取多组 pathKey -> targetKey 的值
-     * 
-     * <h4>示例：</h4>
-     * <pre>{@code
-     * List<String[]> mappings = Arrays.asList(
-     *     new String[]{"database", "host"},
-     *     new String[]{"cache", "host"}
-     * );
-     * Map<String, Set<Object>> result = JsonValueExtractor.batchExtract(json, mappings);
-     * // result.get("host") 包含所有提取的host值
-     * }</pre>
-     * 
-     * <p><b>注意：</b>返回的Map以targetKey为键，如果多个映射使用相同的targetKey，
-     * 后面的结果会覆盖前面的结果。</p>
      *
-     * @param jsonString JSON字符串，不能为null或空
-     * @param mappings   映射列表，每个元素为 [pathKey, targetKey] 数组
+     * @param jsonString JSON字符串
+     * @param mappings   映射列表，每个元素为 [pathKey, targetKey]
      * @return Map，key为targetKey，value为提取到的值集合
-     * @throws IllegalArgumentException 如果jsonString为null或空，或mappings为null
      */
     public static Map<String, Set<Object>> batchExtract(String jsonString, List<String[]> mappings) {
         return batchExtractWithArrayIndex(jsonString, mappings, ARRAY_INDEX_ALL);
     }
 
     /**
-     * 批量提取多组键值对，支持指定数组索引
+     * 批量提取，支持数组索引
      *
-     * @param jsonString JSON字符串，不能为null或空
-     * @param mappings   映射列表，每个元素为 [pathKey, targetKey] 数组
-     * @param arrayIndex 数组索引（0-based），-1表示遍历所有元素
-     * @return Map，key为targetKey，value为提取到的值集合
-     * @throws IllegalArgumentException 如果jsonString为null或空，或mappings为null
+     * @param jsonString JSON字符串
+     * @param mappings   映射列表
+     * @param arrayIndex 数组索引
+     * @return Map
      */
     public static Map<String, Set<Object>> batchExtractWithArrayIndex(String jsonString, 
                                                                        List<String[]> mappings, 
@@ -323,39 +246,41 @@ public class JsonValueExtractor {
 
         Map<String, Set<Object>> result = new LinkedHashMap<>();
         for (String[] mapping : mappings) {
-            processMapping(result, jsonString, mapping, arrayIndex);
+            if (mapping != null && mapping.length >= 2) {
+                Set<Object> values = extractAllValuesWithArrayIndex(jsonString, mapping[0], mapping[1], arrayIndex);
+                result.put(mapping[1], values);
+            }
         }
         return result;
     }
 
     /**
-     * 批量提取并返回List形式的结果
-     * 
-     * <p>与 batchExtract 的区别在于返回值类型是 List 而不是 Set，方便某些场景使用。</p>
+     * 批量提取并返回List形式
      *
      * @param jsonString JSON字符串
      * @param mappings   映射列表
-     * @return Map，key为targetKey，value为提取到的值列表
+     * @return Map
      */
     public static Map<String, List<Object>> batchExtractAsList(String jsonString, List<String[]> mappings) {
         Map<String, Set<Object>> setResult = batchExtract(jsonString, mappings);
-        return convertToListMap(setResult);
+        Map<String, List<Object>> listResult = new LinkedHashMap<>();
+        for (Map.Entry<String, Set<Object>> entry : setResult.entrySet()) {
+            listResult.put(entry.getKey(), new ArrayList<>(entry.getValue()));
+        }
+        return listResult;
     }
 
     // ==================================================================================
-    // 第五部分：字符串专用方法
-    // 这些方法只提取字符串类型的值，过滤掉数字、布尔等其他类型
+    // 第四部分：字符串专用方法
     // ==================================================================================
 
     /**
-     * 提取指定目标键的所有字符串值
-     * 
-     * <p>只返回字符串类型的值，自动过滤数字、布尔值等其他类型。</p>
+     * 提取所有字符串类型的值
      *
      * @param jsonString JSON字符串
-     * @param pathKey    限定搜索的路径键名
-     * @param targetKey  要提取的目标键名
-     * @return 去重后的字符串值集合
+     * @param pathKey    路径键名
+     * @param targetKey  目标键名
+     * @return 字符串值集合
      */
     public static Set<String> extractStringValues(String jsonString, String pathKey, String targetKey) {
         Set<Object> values = extractAllValues(jsonString, pathKey, targetKey);
@@ -363,24 +288,24 @@ public class JsonValueExtractor {
     }
 
     /**
-     * 提取指定目标键的所有字符串值并返回List
+     * 提取字符串值并返回List
      *
      * @param jsonString JSON字符串
-     * @param pathKey    限定搜索的路径键名
-     * @param targetKey  要提取的目标键名
-     * @return 去重后的字符串值列表
+     * @param pathKey    路径键名
+     * @param targetKey  目标键名
+     * @return 字符串值列表
      */
     public static List<String> extractStringValuesAsList(String jsonString, String pathKey, String targetKey) {
         return new ArrayList<>(extractStringValues(jsonString, pathKey, targetKey));
     }
 
     /**
-     * 提取字符串值，只取每个数组的第一个元素
+     * 提取字符串值，只取每个数组的第一个
      *
      * @param jsonString JSON字符串
-     * @param pathKey    限定搜索的路径键名
-     * @param targetKey  要提取的目标键名
-     * @return 去重后的字符串值集合
+     * @param pathKey    路径键名
+     * @param targetKey  目标键名
+     * @return 字符串值集合
      */
     public static Set<String> extractFirstStringValues(String jsonString, String pathKey, String targetKey) {
         Set<Object> values = extractAllFirstValues(jsonString, pathKey, targetKey);
@@ -388,186 +313,34 @@ public class JsonValueExtractor {
     }
 
     // ==================================================================================
-    // 第六部分：参数校验方法
-    // 统一的参数校验逻辑，抛出明确的异常信息
+    // 第五部分：核心算法 - 搜索 pathKey
+    // 在整个JSON中递归搜索所有 pathKey，然后提取其下的 targetKey
     // ==================================================================================
 
     /**
-     * 校验所有必需的输入参数
+     * 在JSON元素中搜索所有 pathKey，并提取其下的 targetKey 值
      * 
-     * @param jsonString JSON字符串
+     * <p>算法步骤：</p>
+     * <ol>
+     *   <li>遍历JSON结构的每个节点</li>
+     *   <li>如果节点的键等于 pathKey：
+     *     <ul>
+     *       <li>检查该节点内部是否还有 pathKey（嵌套情况）</li>
+     *       <li>如果有嵌套，递归找到最内层的 pathKey</li>
+     *       <li>在最内层 pathKey 的整个子树中搜索 targetKey</li>
+     *     </ul>
+     *   </li>
+     *   <li>如果节点的键不等于 pathKey，继续递归搜索子节点</li>
+     * </ol>
+     *
+     * @param element    JSON元素
      * @param pathKey    路径键
-     * @param targetKey  目标键
-     * @throws IllegalArgumentException 如果任何参数无效
-     */
-    private static void validateRequiredInputs(String jsonString, String pathKey, String targetKey) {
-        validateJsonString(jsonString);
-        validatePathAndTargetKey(pathKey, targetKey);
-    }
-
-    /**
-     * 校验JSON字符串
-     * 
-     * @param jsonString JSON字符串
-     * @throws IllegalArgumentException 如果jsonString为null或空
-     */
-    private static void validateJsonString(String jsonString) {
-        if (jsonString == null || jsonString.trim().isEmpty()) {
-            throw new IllegalArgumentException("JSON string cannot be null or empty");
-        }
-    }
-
-    /**
-     * 校验pathKey和targetKey
-     * 
-     * @param pathKey   路径键
-     * @param targetKey 目标键
-     * @throws IllegalArgumentException 如果任一参数为null
-     */
-    private static void validatePathAndTargetKey(String pathKey, String targetKey) {
-        if (pathKey == null || targetKey == null) {
-            throw new IllegalArgumentException("pathKey and targetKey cannot be null");
-        }
-    }
-
-    // ==================================================================================
-    // 第七部分：核心提取逻辑
-    // 这些私有方法实现实际的值提取逻辑，通过拆分降低嵌套层数
-    // ==================================================================================
-
-    /**
-     * 从JsonElement中提取值（处理嵌套同名路径）
-     * 
-     * <p>这是核心提取方法，负责：</p>
-     * <ul>
-     *   <li>处理嵌套同名路径（a套a）：如果发现同名pathKey，递归到最内层</li>
-     *   <li>遍历对象属性，找到targetKey时提取值</li>
-     *   <li>处理数组时根据arrayIndex决定遍历策略</li>
-     * </ul>
-     * 
-     * @param element    要处理的JSON元素
-     * @param pathKey    路径键（用于检测嵌套同名路径）
      * @param targetKey  目标键
      * @param arrayIndex 数组索引
      * @return 提取到的值集合
      */
-    private static Set<Object> extractFromElement(JsonElement element, String pathKey, 
-                                                   String targetKey, int arrayIndex) {
-        Set<Object> results = new LinkedHashSet<>();
-
-        // 空值检查（Early Return）
-        if (element == null || element.isJsonNull()) {
-            return results;
-        }
-
-        // 根据元素类型分发处理
-        if (element.isJsonObject()) {
-            extractFromObject(results, element.getAsJsonObject(), pathKey, targetKey, arrayIndex);
-        } else if (element.isJsonArray()) {
-            extractFromArray(results, element.getAsJsonArray(), pathKey, targetKey, arrayIndex);
-        }
-
-        return results;
-    }
-
-    /**
-     * 从JsonObject中提取值
-     * 
-     * @param results    结果集合（会被修改）
-     * @param obj        JSON对象
-     * @param pathKey    路径键
-     * @param targetKey  目标键
-     * @param arrayIndex 数组索引
-     */
-    private static void extractFromObject(Set<Object> results, JsonObject obj, String pathKey, 
-                                          String targetKey, int arrayIndex) {
-        // 检查嵌套同名路径：如果有内层pathKey，只处理内层
-        if (obj.has(pathKey)) {
-            results.addAll(extractFromElement(obj.get(pathKey), pathKey, targetKey, arrayIndex));
-            return;
-        }
-
-        // 没有嵌套同名路径，遍历所有属性
-        for (Map.Entry<String, JsonElement> entry : obj.entrySet()) {
-            processObjectEntry(results, entry, pathKey, targetKey, arrayIndex);
-        }
-    }
-
-    /**
-     * 处理对象的单个属性
-     * 
-     * @param results    结果集合
-     * @param entry      属性条目
-     * @param pathKey    路径键
-     * @param targetKey  目标键
-     * @param arrayIndex 数组索引
-     */
-    private static void processObjectEntry(Set<Object> results, Map.Entry<String, JsonElement> entry,
-                                           String pathKey, String targetKey, int arrayIndex) {
-        String key = entry.getKey();
-        JsonElement value = entry.getValue();
-
-        // 如果是目标键，提取值
-        if (key.equals(targetKey)) {
-            addPrimitiveValue(results, value);
-        }
-
-        // 如果不是pathKey（避免重复处理），继续递归
-        if (!key.equals(pathKey)) {
-            results.addAll(extractFromElement(value, pathKey, targetKey, arrayIndex));
-        }
-    }
-
-    /**
-     * 从JsonArray中提取值
-     * 
-     * @param results    结果集合
-     * @param array      JSON数组
-     * @param pathKey    路径键
-     * @param targetKey  目标键
-     * @param arrayIndex 数组索引
-     */
-    private static void extractFromArray(Set<Object> results, JsonArray array, String pathKey, 
-                                         String targetKey, int arrayIndex) {
-        if (arrayIndex == ARRAY_INDEX_ALL) {
-            // 遍历所有元素
-            for (JsonElement item : array) {
-                results.addAll(extractFromElement(item, pathKey, targetKey, arrayIndex));
-            }
-        } else if (isValidArrayIndex(array, arrayIndex)) {
-            // 只取指定索引的元素
-            results.addAll(extractFromElement(array.get(arrayIndex), pathKey, targetKey, arrayIndex));
-        }
-        // 索引超出范围时不返回任何值
-    }
-
-    /**
-     * 检查数组索引是否有效
-     * 
-     * @param array      JSON数组
-     * @param arrayIndex 数组索引
-     * @return 如果索引有效返回true
-     */
-    private static boolean isValidArrayIndex(JsonArray array, int arrayIndex) {
-        return arrayIndex >= 0 && arrayIndex < array.size();
-    }
-
-    // ==================================================================================
-    // 第八部分：递归搜索逻辑
-    // 在整个JSON结构中搜索pathKey，然后提取其下的值
-    // ==================================================================================
-
-    /**
-     * 递归搜索pathKey并提取其下的值
-     * 
-     * @param element    要搜索的JSON元素
-     * @param pathKey    要搜索的路径键
-     * @param targetKey  目标键
-     * @param arrayIndex 数组索引
-     * @return 提取到的值集合
-     */
-    private static Set<Object> searchAndExtract(JsonElement element, String pathKey, 
-                                                 String targetKey, int arrayIndex) {
+    private static Set<Object> findPathKeysAndExtract(JsonElement element, String pathKey, 
+                                                       String targetKey, int arrayIndex) {
         Set<Object> results = new LinkedHashSet<>();
 
         if (element == null || element.isJsonNull()) {
@@ -575,76 +348,203 @@ public class JsonValueExtractor {
         }
 
         if (element.isJsonObject()) {
-            searchInObject(results, element.getAsJsonObject(), pathKey, targetKey, arrayIndex);
+            searchPathKeyInObject(results, element.getAsJsonObject(), pathKey, targetKey, arrayIndex);
         } else if (element.isJsonArray()) {
-            searchInArray(results, element.getAsJsonArray(), pathKey, targetKey, arrayIndex);
+            searchPathKeyInArray(results, element.getAsJsonArray(), pathKey, targetKey, arrayIndex);
         }
 
         return results;
     }
 
     /**
-     * 在JsonObject中搜索pathKey
-     * 
+     * 在JsonObject中搜索 pathKey
+     *
      * @param results    结果集合
      * @param obj        JSON对象
      * @param pathKey    路径键
      * @param targetKey  目标键
      * @param arrayIndex 数组索引
      */
-    private static void searchInObject(Set<Object> results, JsonObject obj, String pathKey, 
-                                       String targetKey, int arrayIndex) {
+    private static void searchPathKeyInObject(Set<Object> results, JsonObject obj, String pathKey, 
+                                               String targetKey, int arrayIndex) {
         for (Map.Entry<String, JsonElement> entry : obj.entrySet()) {
-            if (entry.getKey().equals(pathKey)) {
-                // 找到pathKey，提取其下的值
-                results.addAll(extractFromElement(entry.getValue(), pathKey, targetKey, arrayIndex));
+            String key = entry.getKey();
+            JsonElement value = entry.getValue();
+
+            if (key.equals(pathKey)) {
+                // 找到 pathKey，处理嵌套并提取 targetKey
+                Set<Object> extracted = processPathKeyValue(value, pathKey, targetKey, arrayIndex);
+                results.addAll(extracted);
             } else {
-                // 继续递归搜索
-                results.addAll(searchAndExtract(entry.getValue(), pathKey, targetKey, arrayIndex));
+                // 不是 pathKey，继续在子节点中搜索 pathKey
+                results.addAll(findPathKeysAndExtract(value, pathKey, targetKey, arrayIndex));
             }
         }
     }
 
     /**
-     * 在JsonArray中搜索pathKey
-     * 
+     * 在JsonArray中搜索 pathKey
+     *
      * @param results    结果集合
      * @param array      JSON数组
      * @param pathKey    路径键
      * @param targetKey  目标键
      * @param arrayIndex 数组索引
      */
-    private static void searchInArray(Set<Object> results, JsonArray array, String pathKey, 
-                                      String targetKey, int arrayIndex) {
+    private static void searchPathKeyInArray(Set<Object> results, JsonArray array, String pathKey, 
+                                              String targetKey, int arrayIndex) {
         if (arrayIndex == ARRAY_INDEX_ALL) {
             for (JsonElement item : array) {
-                results.addAll(searchAndExtract(item, pathKey, targetKey, arrayIndex));
+                results.addAll(findPathKeysAndExtract(item, pathKey, targetKey, arrayIndex));
             }
-        } else if (isValidArrayIndex(array, arrayIndex)) {
-            results.addAll(searchAndExtract(array.get(arrayIndex), pathKey, targetKey, arrayIndex));
+        } else if (arrayIndex >= 0 && arrayIndex < array.size()) {
+            results.addAll(findPathKeysAndExtract(array.get(arrayIndex), pathKey, targetKey, arrayIndex));
         }
     }
 
     // ==================================================================================
-    // 第九部分：值处理方法
-    // 将JsonElement转换为Java对象并添加到结果集合
+    // 第六部分：核心算法 - 处理 pathKey 值并提取 targetKey
     // ==================================================================================
 
     /**
-     * 将JSON元素的值添加到结果集合
+     * 处理找到的 pathKey 的值
      * 
-     * <p>处理规则：</p>
+     * <p>处理嵌套同名路径（a套a）的逻辑：</p>
      * <ul>
-     *   <li>原始类型（字符串、数字、布尔）：直接添加</li>
-     *   <li>数组类型：展开后逐个添加</li>
-     *   <li>对象类型：忽略（不把整个对象作为值）</li>
-     *   <li>null：忽略</li>
+     *   <li>如果 pathKey 的值内部还有同名的 pathKey，递归到最内层</li>
+     *   <li>在最内层的 pathKey 子树中搜索所有 targetKey</li>
      * </ul>
+     *
+     * @param pathValue  pathKey 对应的值
+     * @param pathKey    路径键（用于检测嵌套）
+     * @param targetKey  目标键
+     * @param arrayIndex 数组索引
+     * @return 提取到的值集合
+     */
+    private static Set<Object> processPathKeyValue(JsonElement pathValue, String pathKey, 
+                                                    String targetKey, int arrayIndex) {
+        // 找到最内层的 pathKey（处理嵌套同名路径）
+        JsonElement innermostValue = findInnermostPathKey(pathValue, pathKey, arrayIndex);
+        
+        // 在最内层 pathKey 的子树中搜索所有 targetKey
+        return searchTargetKeyInSubtree(innermostValue, targetKey, arrayIndex);
+    }
+
+    /**
+     * 找到最内层的同名 pathKey
      * 
+     * <p>例如：对于 a 套 a 的情况，递归到最内层的 a</p>
+     *
+     * @param element    当前元素
+     * @param pathKey    路径键
+     * @param arrayIndex 数组索引
+     * @return 最内层 pathKey 的值
+     */
+    private static JsonElement findInnermostPathKey(JsonElement element, String pathKey, int arrayIndex) {
+        if (element == null || element.isJsonNull()) {
+            return element;
+        }
+
+        if (element.isJsonObject()) {
+            JsonObject obj = element.getAsJsonObject();
+            // 检查是否有内层同名 pathKey
+            if (obj.has(pathKey)) {
+                // 有嵌套，递归到内层
+                return findInnermostPathKey(obj.get(pathKey), pathKey, arrayIndex);
+            }
+        } else if (element.isJsonArray()) {
+            // 数组中可能有 pathKey，需要搜索
+            // 但这里我们返回原始数组，在 searchTargetKeyInSubtree 中处理
+        }
+
+        // 没有嵌套或已到最内层，返回当前元素
+        return element;
+    }
+
+    // ==================================================================================
+    // 第七部分：核心算法 - 在子树中搜索 targetKey
+    // ==================================================================================
+
+    /**
+     * 在子树中递归搜索所有 targetKey
+     * 
+     * <p>会遍历整个子树的所有层级，找到所有名为 targetKey 的键并提取其值。</p>
+     *
+     * @param element    要搜索的元素
+     * @param targetKey  目标键
+     * @param arrayIndex 数组索引
+     * @return 提取到的值集合
+     */
+    private static Set<Object> searchTargetKeyInSubtree(JsonElement element, String targetKey, int arrayIndex) {
+        Set<Object> results = new LinkedHashSet<>();
+
+        if (element == null || element.isJsonNull()) {
+            return results;
+        }
+
+        if (element.isJsonObject()) {
+            searchTargetInObject(results, element.getAsJsonObject(), targetKey, arrayIndex);
+        } else if (element.isJsonArray()) {
+            searchTargetInArray(results, element.getAsJsonArray(), targetKey, arrayIndex);
+        }
+
+        return results;
+    }
+
+    /**
+     * 在JsonObject中搜索 targetKey
+     *
+     * @param results    结果集合
+     * @param obj        JSON对象
+     * @param targetKey  目标键
+     * @param arrayIndex 数组索引
+     */
+    private static void searchTargetInObject(Set<Object> results, JsonObject obj, 
+                                              String targetKey, int arrayIndex) {
+        for (Map.Entry<String, JsonElement> entry : obj.entrySet()) {
+            String key = entry.getKey();
+            JsonElement value = entry.getValue();
+
+            // 如果键匹配 targetKey，提取值
+            if (key.equals(targetKey)) {
+                addValue(results, value);
+            }
+
+            // 继续在子节点中搜索 targetKey（任意深度）
+            results.addAll(searchTargetKeyInSubtree(value, targetKey, arrayIndex));
+        }
+    }
+
+    /**
+     * 在JsonArray中搜索 targetKey
+     *
+     * @param results    结果集合
+     * @param array      JSON数组
+     * @param targetKey  目标键
+     * @param arrayIndex 数组索引
+     */
+    private static void searchTargetInArray(Set<Object> results, JsonArray array, 
+                                             String targetKey, int arrayIndex) {
+        if (arrayIndex == ARRAY_INDEX_ALL) {
+            for (JsonElement item : array) {
+                results.addAll(searchTargetKeyInSubtree(item, targetKey, arrayIndex));
+            }
+        } else if (arrayIndex >= 0 && arrayIndex < array.size()) {
+            results.addAll(searchTargetKeyInSubtree(array.get(arrayIndex), targetKey, arrayIndex));
+        }
+    }
+
+    // ==================================================================================
+    // 第八部分：值处理方法
+    // ==================================================================================
+
+    /**
+     * 将值添加到结果集合
+     *
      * @param results 结果集合
      * @param element JSON元素
      */
-    private static void addPrimitiveValue(Set<Object> results, JsonElement element) {
+    private static void addValue(Set<Object> results, JsonElement element) {
         if (element == null || element.isJsonNull()) {
             return;
         }
@@ -652,15 +552,17 @@ public class JsonValueExtractor {
         if (element.isJsonPrimitive()) {
             addPrimitive(results, element.getAsJsonPrimitive());
         } else if (element.isJsonArray()) {
-            // 如果值本身是数组，展开添加每个元素
-            expandArrayValues(results, element.getAsJsonArray());
+            // 如果值是数组，展开添加
+            for (JsonElement item : element.getAsJsonArray()) {
+                addValue(results, item);
+            }
         }
-        // JsonObject类型的值不添加
+        // JsonObject 不作为值添加
     }
 
     /**
-     * 将JsonPrimitive添加到结果集合
-     * 
+     * 添加原始类型值
+     *
      * @param results   结果集合
      * @param primitive JSON原始值
      */
@@ -675,34 +577,49 @@ public class JsonValueExtractor {
     }
 
     /**
-     * 转换数字类型，保持原始精度
+     * 转换数字类型
      * 
-     * <p>如果数字没有小数部分，转为Long；否则保持为Double。</p>
-     * <p>注意：不能使用三元运算符，因为 long 和 double 会被统一为 double 类型。</p>
-     * 
+     * <p>注意：不能使用三元运算符，会导致类型统一为 double</p>
+     *
      * @param number 数字
-     * @return 转换后的数字（Long或Double）
+     * @return Long 或 Double
      */
     private static Number convertNumber(Number number) {
         double doubleValue = number.doubleValue();
         long longValue = number.longValue();
-        // 注意：不能写成 return (doubleValue == longValue) ? longValue : doubleValue;
-        // 因为三元运算符会将 long 和 double 统一转换为 double 类型
         if (doubleValue == longValue) {
-            return longValue;  // 返回 Long
+            return longValue;
         }
-        return doubleValue;  // 返回 Double
+        return doubleValue;
+    }
+
+    // ==================================================================================
+    // 第九部分：参数校验方法
+    // ==================================================================================
+
+    /**
+     * 校验所有输入参数
+     */
+    private static void validateInputs(String jsonString, String pathKey, String targetKey) {
+        validateJsonString(jsonString);
+        validatePathAndTargetKey(pathKey, targetKey);
     }
 
     /**
-     * 展开数组，将每个元素添加到结果集合
-     * 
-     * @param results 结果集合
-     * @param array   JSON数组
+     * 校验JSON字符串
      */
-    private static void expandArrayValues(Set<Object> results, JsonArray array) {
-        for (JsonElement item : array) {
-            addPrimitiveValue(results, item);
+    private static void validateJsonString(String jsonString) {
+        if (jsonString == null || jsonString.trim().isEmpty()) {
+            throw new IllegalArgumentException("JSON string cannot be null or empty");
+        }
+    }
+
+    /**
+     * 校验路径键和目标键
+     */
+    private static void validatePathAndTargetKey(String pathKey, String targetKey) {
+        if (pathKey == null || targetKey == null) {
+            throw new IllegalArgumentException("pathKey and targetKey cannot be null");
         }
     }
 
@@ -711,50 +628,18 @@ public class JsonValueExtractor {
     // ==================================================================================
 
     /**
-     * 处理单个映射条目
-     * 
-     * @param result     结果Map
-     * @param jsonString JSON字符串
-     * @param mapping    映射数组 [pathKey, targetKey]
-     * @param arrayIndex 数组索引
-     */
-    private static void processMapping(Map<String, Set<Object>> result, String jsonString, 
-                                        String[] mapping, int arrayIndex) {
-        if (mapping == null || mapping.length < 2) {
-            return;
-        }
-        String pathKey = mapping[0];
-        String targetKey = mapping[1];
-        Set<Object> values = extractAllValuesWithArrayIndex(jsonString, pathKey, targetKey, arrayIndex);
-        result.put(targetKey, values);
-    }
-
-    /**
-     * 将Set<Object>的Map转换为List<Object>的Map
-     * 
-     * @param setMap 原始Map
-     * @return 转换后的Map
-     */
-    private static Map<String, List<Object>> convertToListMap(Map<String, Set<Object>> setMap) {
-        return setMap.entrySet().stream()
-                .collect(Collectors.toMap(
-                        Map.Entry::getKey,
-                        e -> new ArrayList<>(e.getValue()),
-                        (a, b) -> a,
-                        LinkedHashMap::new
-                ));
-    }
-
-    /**
-     * 从值集合中过滤出字符串类型
-     * 
+     * 过滤出字符串类型的值
+     *
      * @param values 值集合
-     * @return 只包含字符串的集合
+     * @return 字符串集合
      */
     private static Set<String> filterStrings(Set<Object> values) {
-        return values.stream()
-                .filter(v -> v instanceof String)
-                .map(v -> (String) v)
-                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<String> result = new LinkedHashSet<>();
+        for (Object value : values) {
+            if (value instanceof String) {
+                result.add((String) value);
+            }
+        }
+        return result;
     }
 }
